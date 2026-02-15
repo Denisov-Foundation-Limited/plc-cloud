@@ -1,0 +1,251 @@
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PLC Cloud</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand">PLC Cloud</div>
+      <nav class="main-menu hidden" id="mainMenu">
+        <button class="ghost menu-btn" id="menuObjects">Объекты</button>
+        <button class="ghost menu-btn" id="menuSettings">Настройка</button>
+      </nav>
+      <nav class="top-menu hidden" id="topMenu">
+        <button class="ghost menu-btn" id="menuStatus">Статус</button>
+        <button class="ghost menu-btn" id="menuControllers">Контроллеры</button>
+        <button class="ghost menu-btn" id="menuNetwork">Сеть</button>
+      </nav>
+      <div class="status" id="status"></div>
+      <button class="ghost" id="logoutBtn">Выйти</button>
+    </header>
+
+    <section id="loginView" class="card">
+      <h1>Вход</h1>
+      <form id="loginForm">
+        <label>
+          Логин
+          <input type="text" name="username" value="admin" required />
+        </label>
+        <label>
+          Пароль
+          <input type="password" name="password" value="" />
+        </label>
+        <button type="submit">Войти</button>
+        <div class="hint">По умолчанию: admin / пустой пароль</div>
+      </form>
+    </section>
+
+    <section id="objectsView" class="card hidden">
+      <h1>Выбор объекта</h1>
+      <div id="objectsList" class="object-tiles"></div>
+    </section>
+
+    <section id="settingsView" class="card hidden">
+      <h1>Настройка</h1>
+      <h2>Редактор объектов</h2>
+      <form id="objectForm" class="object-admin-form">
+        <label>
+          Название объекта
+          <input type="text" name="name" placeholder="Новый объект" required />
+        </label>
+        <label>
+          Иконка
+          <select name="icon">
+            <option value="apartment">Квартира</option>
+            <option value="house" selected>Частный дом</option>
+            <option value="dacha">Дача</option>
+            <option value="garage">Гараж</option>
+            <option value="garden">Сад</option>
+          </select>
+        </label>
+        <button type="submit">Добавить объект</button>
+      </form>
+      <div id="adminObjects" class="admin-list"></div>
+      <div class="divider"></div>
+      <h2>Администрирование устройств</h2>
+      <form id="deviceForm" class="admin-form">
+        <label>
+          Device ID
+          <input type="number" name="device_id" required />
+        </label>
+        <label>
+          Имя
+          <input type="text" name="name" placeholder="PLC-ESP" />
+        </label>
+        <label>
+          Объект
+          <select name="object_name" id="deviceObjectSelect"></select>
+        </label>
+        <label>
+          API key (опционально)
+          <input type="text" name="api_key" placeholder="оставь пустым для генерации" />
+        </label>
+        <button type="submit">Добавить устройство</button>
+      </form>
+      <div id="adminDevices" class="admin-list"></div>
+    </section>
+
+    <section id="devicesView" class="card hidden">
+      <div class="row">
+        <h1>Устройства онлайн</h1>
+        <button class="ghost" id="backToObjects">Назад</button>
+      </div>
+      <div class="sub" id="devicesObject"></div>
+      <div id="devicesList" class="list"></div>
+      <div class="empty" id="devicesEmpty">Нет устройств онлайн</div>
+    </section>
+
+    <section id="deviceView" class="card hidden">
+      <div class="row">
+        <h1>Устройство</h1>
+        <button class="ghost" id="backToDevices">Назад</button>
+      </div>
+      <div class="sub" id="deviceTitle"></div>
+      <div class="interface-tools">
+        <label class="scope-label">
+          Источник
+          <select id="deviceScope"></select>
+        </label>
+        <button class="ghost" id="refreshDevice">Обновить</button>
+      </div>
+      <div class="notice" id="deviceNotice"></div>
+      <div class="interface-grid">
+        <section class="interface-card">
+          <h2>Статус</h2>
+          <table class="status-table">
+            <tbody id="deviceStatusBody"></tbody>
+          </table>
+        </section>
+      </div>
+    </section>
+
+    <section id="deviceControllersView" class="card hidden">
+      <div class="row">
+        <h1>Контроллеры</h1>
+        <button class="ghost" id="backToDevicesFromControllers">Назад</button>
+      </div>
+      <div class="sub" id="deviceControllersTitle"></div>
+      <div class="controllers-grid-page" id="deviceControllersGrid"></div>
+    </section>
+
+    <section id="deviceSocketsView" class="card hidden">
+      <div class="row">
+        <h1>Розетки</h1>
+        <button class="ghost" id="backToControllersFromSockets">Назад</button>
+      </div>
+      <div class="sub" id="deviceSocketsTitle"></div>
+      <div class="interface-tools">
+        <label class="scope-label">
+          Источник
+          <select id="socketsScope"></select>
+        </label>
+        <button class="ghost" id="refreshSockets">Обновить</button>
+      </div>
+      <div class="notice" id="deviceSocketsNotice"></div>
+      <div class="sockets-grid" id="deviceSocketsGrid"></div>
+    </section>
+
+    <section id="deviceLightsView" class="card hidden">
+      <div class="row">
+        <h1>Свет</h1>
+        <button class="ghost" id="backToControllersFromLights">Назад</button>
+      </div>
+      <div class="sub" id="deviceLightsTitle"></div>
+      <div class="interface-tools">
+        <label class="scope-label">
+          Источник
+          <select id="lightsScope"></select>
+        </label>
+        <button class="ghost" id="refreshLights">Обновить</button>
+      </div>
+      <div class="notice" id="deviceLightsNotice"></div>
+      <div class="lights-grid" id="deviceLightsGrid"></div>
+    </section>
+
+    <section id="deviceTanksView" class="card hidden">
+      <div class="row">
+        <h1>Баки</h1>
+        <button class="ghost" id="backToControllersFromTanks">Назад</button>
+      </div>
+      <div class="sub" id="deviceTanksTitle"></div>
+      <div class="interface-tools">
+        <label class="scope-label">
+          Источник
+          <select id="tanksScope"></select>
+        </label>
+        <button class="ghost" id="refreshTanks">Обновить</button>
+      </div>
+      <div class="notice" id="deviceTanksNotice"></div>
+      <div class="tanks-grid" id="deviceTanksGrid"></div>
+    </section>
+
+    <section id="deviceSecurityView" class="card hidden">
+      <div class="row">
+        <h1>Сигнализация</h1>
+        <button class="ghost" id="backToControllersFromSecurity">Назад</button>
+      </div>
+      <div class="sub" id="deviceSecurityTitle"></div>
+      <div class="interface-tools">
+        <label class="scope-label">
+          Источник
+          <select id="securityScope"></select>
+        </label>
+        <button class="ghost" id="refreshSecurity">Обновить</button>
+      </div>
+      <div class="notice" id="deviceSecurityNotice"></div>
+      <div class="security-summary" id="deviceSecuritySummary"></div>
+      <div class="socket-actions" id="deviceSecurityActions">
+        <button class="ghost btn-sm" data-action="arm">Поставить</button>
+        <button class="ghost btn-sm" data-action="disarm">Снять</button>
+        <button class="ghost btn-sm" data-action="clear">Сброс тревоги</button>
+      </div>
+      <div class="security-grid" id="deviceSecurityGrid"></div>
+    </section>
+
+    <section id="deviceMeteoView" class="card hidden">
+      <div class="row">
+        <h1>Метео</h1>
+        <button class="ghost" id="backToControllersFromMeteo">Назад</button>
+      </div>
+      <div class="sub" id="deviceMeteoTitle"></div>
+      <div class="interface-tools">
+        <label class="scope-label">
+          Источник
+          <select id="meteoScope"></select>
+        </label>
+        <button class="ghost" id="refreshMeteo">Обновить</button>
+      </div>
+      <div class="notice" id="deviceMeteoNotice"></div>
+      <div class="meteo-grid" id="deviceMeteoGrid"></div>
+    </section>
+
+    <section id="deviceNetworkView" class="card hidden">
+      <div class="row">
+        <h1>Сеть</h1>
+        <button class="ghost" id="backToDevicesFromNetwork">Назад</button>
+      </div>
+      <div class="sub" id="deviceNetworkTitle"></div>
+      <div class="network-grid">
+        <section class="interface-card">
+          <h2>Wi-Fi</h2>
+          <table class="status-table">
+            <tbody id="deviceWifiBody"></tbody>
+          </table>
+        </section>
+        <section class="interface-card">
+          <h2>GSM</h2>
+          <table class="status-table">
+            <tbody id="deviceGsmBody"></tbody>
+          </table>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
