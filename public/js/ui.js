@@ -28,11 +28,11 @@ function formatTemperature(value, digits = null) {
 }
 
 const OBJECT_ICON_OPTIONS = [
-  { value: 'apartment', label: 'РљРІР°СЂС‚РёСЂР°' },
-  { value: 'house', label: 'Р§Р°СЃС‚РЅС‹Р№ РґРѕРј' },
-  { value: 'dacha', label: 'Р”Р°С‡Р°' },
-  { value: 'garage', label: 'Р“Р°СЂР°Р¶' },
-  { value: 'garden', label: 'РЎР°Рґ' }
+  { value: 'apartment', label: 'Квартира' },
+  { value: 'house', label: 'Частный дом' },
+  { value: 'dacha', label: 'Дача' },
+  { value: 'garage', label: 'Гараж' },
+  { value: 'garden', label: 'Сад' }
 ];
 
 function normalizeObjectItem(raw) {
@@ -110,67 +110,67 @@ function summarizeControllers(controllers = {}) {
   return [
     {
       key: 'sockets',
-      title: 'Р РѕР·РµС‚РєРё',
+      title: 'Розетки',
       status: `${sockets.filter(x => x.state).length}/${sockets.length}`,
       online: sockets.some(x => x.enabled)
     },
     {
       key: 'lights',
-      title: 'РћСЃРІРµС‰РµРЅРёРµ',
+      title: 'Освещение',
       status: `${lights.filter(x => x.state).length}/${lights.length}`,
       online: lights.some(x => x.enabled)
     },
     {
       key: 'meteo',
-      title: 'РњРµС‚РµРѕ',
+      title: 'Метео',
       status: `${meteo.filter(x => x.ok).length}/${meteo.length}`,
       online: meteo.some(x => x.enabled)
     },
     {
       key: 'thermo',
-      title: 'РўРµСЂРјРѕСЃС‚Р°С‚С‹',
+      title: 'Термостаты',
       status: `${thermo.filter(x => x.heat_on || x.cool_on).length}/${thermo.length}`,
       online: thermo.some(x => x.enabled)
     },
     {
       key: 'tanks',
-      title: 'Р‘Р°РєРё',
+      title: 'Баки',
       status: `${tanks.filter(x => x.pump_on || x.alarm_on).length}/${tanks.length}`,
       online: tanks.some(x => x.enabled)
     },
     {
       key: 'septic',
-      title: 'РЎРµРїС‚РёРє',
+      title: 'Септик',
       status: `${septic.filter(x => x.warning || x.alarm).length}/${septic.length}`,
       online: septic.some(x => x.enabled)
     },
     {
       key: 'watering',
-      title: 'РџРѕР»РёРІ',
+      title: 'Полив',
       status: `${watering.filter(x => x.active).length}/${watering.length}`,
       online: watering.some(x => x.enabled)
     },
     {
       key: 'security',
-      title: 'РћС…СЂР°РЅР°',
-      status: controllers.security ? (controllers.security.alarm ? 'РўСЂРµРІРѕРіР°' : (controllers.security.armed ? 'РќР° РѕС…СЂР°РЅРµ' : 'РЎРЅСЏС‚Рѕ')) : '-',
+      title: 'Охрана',
+      status: controllers.security ? (controllers.security.alarm ? 'Тревога' : (controllers.security.armed ? 'На охране' : 'Снято')) : '-',
       online: Boolean(controllers.security?.enabled)
     },
     {
       key: 'ring',
-      title: 'Р—РІРѕРЅРѕРє',
-      status: controllers.ring ? (controllers.ring.relay_on ? 'Р’РєР»' : 'Р’С‹РєР»') : '-',
+      title: 'Звонок',
+      status: controllers.ring ? (controllers.ring.relay_on ? 'Вкл' : 'Выкл') : '-',
       online: Boolean(controllers.ring?.enabled)
     },
     {
       key: 'avr',
-      title: 'РђР’Р ',
+      title: 'АВР',
       status: controllers.avr ? `${controllers.avr.active_source || '-'}${controllers.avr.fault && controllers.avr.fault !== 'none' ? ` / ${controllers.avr.fault}` : ''}` : '-',
       online: Boolean(controllers.avr?.enabled)
     },
     {
       key: 'leak',
-      title: 'РџСЂРѕС‚РµС‡РєРё',
+      title: 'Протечки',
       status: `${leak.filter(x => x.wet || x.alarm_latched).length}/${leak.length}`,
       online: leak.some(x => x.enabled)
     }
@@ -419,7 +419,7 @@ export class Ui {
       const value = unit === 'stack' && Number.isFinite(nodeId) && nodeId > 0 ? `stack:${nodeId}` : 'local';
       return {
         value,
-        label: String(item?.label || (value === 'local' ? 'Р›РѕРєР°Р»СЊРЅРѕРµ СѓСЃС‚СЂРѕР№СЃС‚РІРѕ' : `Stack #${nodeId}`))
+        label: String(item?.label || (value === 'local' ? 'Локальное устройство' : `Stack #${nodeId}`))
       };
     });
     const values = new Set(normalized.map((r) => r.value));
@@ -436,14 +436,14 @@ export class Ui {
       if (!normalized.length) {
         const opt = document.createElement('option');
         opt.value = 'local';
-        opt.textContent = 'Р›РѕРєР°Р»СЊРЅРѕРµ СѓСЃС‚СЂРѕР№СЃС‚РІРѕ';
+        opt.textContent = 'Локальное устройство';
         select.appendChild(opt);
       }
       select.value = safeValue;
     }
   }
 
-  renderEmptyState(title = 'РќРµС‚ РґР°РЅРЅС‹С…', actionLabel = 'РћР±РЅРѕРІРёС‚СЊ') {
+  renderEmptyState(title = 'Нет данных', actionLabel = 'Обновить') {
     return `
       <div class="empty-state">
         <div class="empty-ico" aria-hidden="true">
@@ -454,7 +454,7 @@ export class Ui {
           </svg>
         </div>
         <div class="empty-title">${esc(title)}</div>
-        <div class="empty-sub">РџСЂРѕРІРµСЂСЊС‚Рµ СЃРѕРµРґРёРЅРµРЅРёРµ РёР»Рё Р·Р°РїСЂРѕСЃРёС‚Рµ СЃРЅРёРјРѕРє СЃРѕСЃС‚РѕСЏРЅРёСЏ.</div>
+        <div class="empty-sub">Проверьте соединение или запросите снимок состояния.</div>
         <button class="ghost btn-sm empty-cta" type="button" data-empty-refresh="1">${esc(actionLabel)}</button>
       </div>
     `;
@@ -620,8 +620,8 @@ export class Ui {
               <path d="M7 12h10"></path>
             </svg>
           </div>
-          <div class="empty-title">РќРµС‚ СѓСЃС‚СЂРѕР№СЃС‚РІ РѕРЅР»Р°Р№РЅ</div>
-          <button class="ghost btn-sm empty-cta" type="button" data-empty-devices-refresh="1">РћР±РЅРѕРІРёС‚СЊ СЃРїРёСЃРѕРє</button>
+          <div class="empty-title">Нет устройств онлайн</div>
+          <button class="ghost btn-sm empty-cta" type="button" data-empty-devices-refresh="1">Обновить список</button>
         </div>
       `;
       return;
@@ -640,7 +640,7 @@ export class Ui {
           <circle cx="46" cy="42" r="2.5" fill="currentColor"/>
           <path d="M6 20h6M6 28h6M6 36h6M6 44h6M52 20h6M52 28h6M52 36h6M52 44h6" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
         </svg>
-        <span class="device-name">${esc(device.name || 'Р‘РµР· РёРјРµРЅРё')}</span>
+        <span class="device-name">${esc(device.name || 'Без имени')}</span>
         <span class="device-id">#${esc(device.device_id)}</span>
       `;
       btn.addEventListener('click', () => onSelect(device));
@@ -651,7 +651,7 @@ export class Ui {
   renderScopeOptions(stack, currentUnit = 'local', currentNodeId = null) {
     if (!this.deviceScope && !this.socketsScope && !this.lightsScope && !this.tanksScope && !this.securityScope && !this.meteoScope) return;
     const nodes = asArray(stack?.nodes);
-    const options = [{ value: 'local', label: 'Р›РѕРєР°Р»СЊРЅРѕРµ СѓСЃС‚СЂРѕР№СЃС‚РІРѕ' }];
+    const options = [{ value: 'local', label: 'Локальное устройство' }];
     for (const node of nodes) {
       if (!node?.node_id) continue;
       options.push({
@@ -697,14 +697,14 @@ export class Ui {
     const cpuTemp = formatTemperature(plc.cpu_temp);
 
     this.deviceStatusBody.innerHTML = `
-      <tr><td>??? ??????????</td><td><strong>${esc(detail.name || '-')}</strong></td></tr>
-      <tr><td>Р”Р°С‚Р°</td><td><strong>${esc(rtc.date || '-')}</strong></td></tr>
-      <tr><td>Р’СЂРµРјСЏ</td><td><strong>${esc(rtc.time || '-')}</strong></td></tr>
-      <tr><td>RTC С‚РµРјРїРµСЂР°С‚СѓСЂР°</td><td><strong>${rtcTemp}</strong></td></tr>
-      <tr><td>РўРµРјРїРµСЂР°С‚СѓСЂР° РїР»Р°С‚С‹</td><td><strong>${boardTemp}</strong></td></tr>
+      <tr><td>Имя устройства</td><td><strong>${esc(detail.name || '-')}</strong></td></tr>
+      <tr><td>Дата</td><td><strong>${esc(rtc.date || '-')}</strong></td></tr>
+      <tr><td>Время</td><td><strong>${esc(rtc.time || '-')}</strong></td></tr>
+      <tr><td>RTC температура</td><td><strong>${rtcTemp}</strong></td></tr>
+      <tr><td>Температура платы</td><td><strong>${boardTemp}</strong></td></tr>
       <tr><td>CPU</td><td><strong>${cpuTemp}</strong></td></tr>
-      <tr><td>Р’РµРЅС‚РёР»СЏС‚РѕСЂ</td><td>${onOffDot(Boolean(fan.fan_on))}</td></tr>
-      <tr><td>РЎС‚Р°С‚СѓСЃ</td><td>${onOffDot(Boolean(detail.online))}</td></tr>
+      <tr><td>Вентилятор</td><td>${onOffDot(Boolean(fan.fan_on))}</td></tr>
+      <tr><td>Статус</td><td>${onOffDot(Boolean(detail.online))}</td></tr>
     `;
 
     const cards = summarizeControllers(detail.controllers);
@@ -721,7 +721,7 @@ export class Ui {
               <span class="ctrl-title">${esc(card.title)}</span>
               ${onOffDot(card.online)}
             </div>
-            <div class="ctrl-sub">${card.online ? 'РѕРЅР»Р°Р№РЅ' : 'РѕС„С„Р»Р°Р№РЅ'}</div>
+            <div class="ctrl-sub">${card.online ? 'онлайн' : 'оффлайн'}</div>
             <div class="ctrl-value">${esc(card.status)}</div>
           </div>
         </div>
@@ -733,7 +733,7 @@ export class Ui {
   renderSockets(detail) {
     const sockets = asArray(detail?.controllers?.sockets);
     if (!sockets.length) {
-      this.deviceSocketsGrid.innerHTML = this.renderEmptyState('РќРµС‚ РґР°РЅРЅС‹С… РїРѕ СЂРѕР·РµС‚РєР°Рј');
+      this.deviceSocketsGrid.innerHTML = this.renderEmptyState('Нет данных по розеткам');
       return;
     }
 
@@ -753,13 +753,13 @@ export class Ui {
           </div>
           <div class="socket-main">
             <div class="socket-head">
-              <div class="socket-name">${esc(socket.name || `Р РѕР·РµС‚РєР° ${Number(socket.id)}`)}</div>
+              <div class="socket-name">${esc(socket.name || `Розетка ${Number(socket.id)}`)}</div>
               ${onOffDot(on)}
             </div>
-            <div class="socket-meta">${!enabled ? 'РћС‚РєР»СЋС‡РµРЅР°' : (on ? 'Р’РєР»СЋС‡РµРЅР°' : 'Р’С‹РєР»СЋС‡РµРЅР°')}</div>
-            <div class="socket-pending-text">РћР¶РёРґР°РЅРёРµ...</div>
+            <div class="socket-meta">${!enabled ? 'Отключена' : (on ? 'Включена' : 'Выключена')}</div>
+            <div class="socket-pending-text">Ожидание...</div>
             <div class="socket-actions">
-              <button class="ghost btn-sm ${on ? 'btn-off' : 'btn-on'}" data-action="toggle" ${enabled ? '' : 'disabled'}>${on ? 'РЎС‚Р°С‚СѓСЃ Р’Р«РљР›' : 'РЎС‚Р°С‚СѓСЃ Р’РљР›'}</button>
+              <button class="ghost btn-sm ${on ? 'btn-off' : 'btn-on'}" data-action="toggle" ${enabled ? '' : 'disabled'}>${on ? 'Статус ВЫКЛ' : 'Статус ВКЛ'}</button>
             </div>
           </div>
         </article>
@@ -770,7 +770,7 @@ export class Ui {
   renderMeteo(detail) {
     const meteo = asArray(detail?.controllers?.meteo);
     if (!meteo.length) {
-      this.deviceMeteoGrid.innerHTML = this.renderEmptyState('РќРµС‚ РґР°РЅРЅС‹С… РїРѕ РјРµС‚РµРѕ');
+      this.deviceMeteoGrid.innerHTML = this.renderEmptyState('Нет данных по метео');
       return;
     }
 
@@ -785,7 +785,7 @@ export class Ui {
       const hum = showHum ? Number(sensor.hum).toFixed(1) : '--';
       const hasData = hasTemp || showHum;
       const statusClass = hasData ? (ok ? 'status-ok' : 'status-err') : 'status-na';
-      const statusText = !enabled ? 'РћС‚РєР»СЋС‡РµРЅ' : (!hasData ? 'РќРµС‚ РґР°РЅРЅС‹С…' : (ok ? 'РќРѕСЂРјР°' : 'РћС€РёР±РєР°'));
+      const statusText = !enabled ? 'Отключен' : (!hasData ? 'Нет данных' : (ok ? 'Норма' : 'Ошибка'));
       const pinNum = Number(sensor.pin);
       const dhtSource = Number.isFinite(pinNum) ? `sens-${pinNum}` : null;
       const sourceLabel = type === 'dht22'
@@ -815,12 +815,12 @@ export class Ui {
           </div>
           <div class="socket-main">
             <div class="socket-head">
-              <div class="socket-name">${esc(sensor.name || `РњРµС‚РµРѕ ${Number(sensor.id)}`)}</div>
+              <div class="socket-name">${esc(sensor.name || `Метео ${Number(sensor.id)}`)}</div>
               <span class="status-dot ${statusClass}"></span>
             </div>
             <div class="socket-meta">${esc(statusText)}</div>
-            <div class="socket-meta">РўРёРї: <span class="meta-value">${esc(sensor.type || '-')}</span></div>
-            <div class="socket-meta">????????: <span class="meta-value">${esc(sourceLabel)}</span></div>
+            <div class="socket-meta">Тип: <span class="meta-value">${esc(sensor.type || '-')}</span></div>
+            <div class="socket-meta">Источник: <span class="meta-value">${esc(sourceLabel)}</span></div>
           </div>
         </article>
       `;
@@ -830,7 +830,7 @@ export class Ui {
   renderLights(detail) {
     const lights = asArray(detail?.controllers?.lights);
     if (!lights.length) {
-      this.deviceLightsGrid.innerHTML = this.renderEmptyState('РќРµС‚ РґР°РЅРЅС‹С… РїРѕ СЃРІРµС‚Сѓ');
+      this.deviceLightsGrid.innerHTML = this.renderEmptyState('Нет данных по свету');
       return;
     }
 
@@ -847,17 +847,17 @@ export class Ui {
           </div>
           <div class="socket-main">
             <div class="socket-head">
-              <div class="socket-name">${esc(light.name || `РЎРІРµС‚ ${Number(light.id)}`)}</div>
+              <div class="socket-name">${esc(light.name || `Свет ${Number(light.id)}`)}</div>
               ${onOffDot(on)}
             </div>
-            <div class="socket-meta">${enabled ? 'Р”РѕСЃС‚СѓРїРµРЅ' : 'РћС‚РєР»СЋС‡РµРЅ'}</div>
+            <div class="socket-meta">${enabled ? 'Доступен' : 'Отключен'}</div>
             <div class="light-status-line">
               <span class="status-dot ${on ? 'status-on' : 'status-off'}"></span>
-              <span class="status-text">${on ? 'Р’РєР»СЋС‡РµРЅР°' : 'Р’С‹РєР»СЋС‡РµРЅР°'}</span>
+              <span class="status-text">${on ? 'Включена' : 'Выключена'}</span>
             </div>
-            <div class="socket-pending-text">РћР¶РёРґР°РЅРёРµ...</div>
+            <div class="socket-pending-text">Ожидание...</div>
             <div class="socket-actions">
-              <button class="ghost btn-sm ${on ? 'btn-off' : 'btn-on'}" data-action="toggle" ${enabled ? '' : 'disabled'}>${on ? 'РЎС‚Р°С‚СѓСЃ Р’Р«РљР›' : 'РЎС‚Р°С‚СѓСЃ Р’РљР›'}</button>
+              <button class="ghost btn-sm ${on ? 'btn-off' : 'btn-on'}" data-action="toggle" ${enabled ? '' : 'disabled'}>${on ? 'Статус ВЫКЛ' : 'Статус ВКЛ'}</button>
             </div>
           </div>
         </article>
@@ -868,7 +868,7 @@ export class Ui {
   renderTanks(detail) {
     const tanks = asArray(detail?.controllers?.tanks);
     if (!tanks.length) {
-      this.deviceTanksGrid.innerHTML = this.renderEmptyState('РќРµС‚ РґР°РЅРЅС‹С… РїРѕ Р±Р°РєР°Рј');
+      this.deviceTanksGrid.innerHTML = this.renderEmptyState('Нет данных по бакам');
       return;
     }
 
@@ -905,15 +905,15 @@ export class Ui {
             </div>
             <div class="status-line">
               <span class="badge">ID ${Number(tank.id)}</span>
-              <span class="badge">${powerOn ? 'РїРёС‚Р°РЅРёРµ Р’РљР›' : 'РїРёС‚Р°РЅРёРµ Р’Р«РљР›'}</span>
+              <span class="badge">${powerOn ? 'питание ВКЛ' : 'питание ВЫКЛ'}</span>
             </div>
           </div>
           <div class="socket-main">
             <div class="socket-head">
-              <div class="socket-name">${esc(tank.name || `Р‘Р°Рє ${Number(tank.id)}`)}</div>
+              <div class="socket-name">${esc(tank.name || `Бак ${Number(tank.id)}`)}</div>
               ${onOffDot(enabled)}
             </div>
-            <div class="socket-meta">${enabled ? 'Р”РѕСЃС‚СѓРїРµРЅ' : 'РћС‚РєР»СЋС‡РµРЅ'}</div>
+            <div class="socket-meta">${enabled ? 'Доступен' : 'Отключен'}</div>
             <div class="tank-status-stack">
               <div class="tank-status-item ${valveOn ? 'is-on' : 'is-off'}">
                 <span class="tank-status-icon" aria-hidden="true">
@@ -925,8 +925,8 @@ export class Ui {
                     <path d="M14 9.5v5"></path>
                   </svg>
                 </span>
-                <span class="tank-status-label">РљР»Р°РїР°РЅ</span>
-                <span class="tank-status-value">${valveOn ? 'Р’РљР›' : 'Р’Р«РљР›'}</span>
+                <span class="tank-status-label">Клапан</span>
+                <span class="tank-status-value">${valveOn ? 'ВКЛ' : 'ВЫКЛ'}</span>
               </div>
               <div class="tank-status-item ${pumpOn ? 'is-on' : 'is-off'}">
                 <span class="tank-status-icon" aria-hidden="true">
@@ -936,8 +936,8 @@ export class Ui {
                     <path d="M8.5 8.5l3 3.5-4.2 1.1"></path>
                   </svg>
                 </span>
-                <span class="tank-status-label">РќР°СЃРѕСЃ</span>
-                <span class="tank-status-value">${pumpOn ? 'Р’РљР›' : 'Р’Р«РљР›'}</span>
+                <span class="tank-status-label">Насос</span>
+                <span class="tank-status-value">${pumpOn ? 'ВКЛ' : 'ВЫКЛ'}</span>
               </div>
               <div class="tank-status-item ${alarmOn ? 'is-alarm' : 'is-ok'}">
                 <span class="tank-status-icon" aria-hidden="true">
@@ -947,12 +947,12 @@ export class Ui {
                     <circle cx="12" cy="16.5" r="0.8" class="tank-status-fill"></circle>
                   </svg>
                 </span>
-                <span class="tank-status-label">РђРІР°СЂРёСЏ</span>
-                <span class="tank-status-value">${alarmOn ? 'Р”Рђ' : 'РќР•Рў'}</span>
+                <span class="tank-status-label">Авария</span>
+                <span class="tank-status-value">${alarmOn ? 'ДА' : 'НЕТ'}</span>
               </div>
             </div>
             <div class="socket-actions">
-              <button class="ghost btn-sm ${powerOn ? 'btn-off' : 'btn-on'}" data-action="power-toggle" ${enabled ? '' : 'disabled'}>${powerOn ? 'РџРёС‚Р°РЅРёРµ Р’Р«РљР›' : 'РџРёС‚Р°РЅРёРµ Р’РљР›'}</button>
+              <button class="ghost btn-sm ${powerOn ? 'btn-off' : 'btn-on'}" data-action="power-toggle" ${enabled ? '' : 'disabled'}>${powerOn ? 'Питание ВЫКЛ' : 'Питание ВКЛ'}</button>
             </div>
           </div>
         </article>
@@ -969,10 +969,10 @@ export class Ui {
     const gsmOk = Boolean(detail?.system?.gsm?.started || detail?.system?.gsm?.enabled);
 
     this.deviceSecuritySummary.innerHTML = `
-      <span class="pill">РЎС‚Р°С‚СѓСЃ: ${armed ? 'РќР° РѕС…СЂР°РЅРµ' : 'РЎРЅСЏС‚Рѕ'}</span>
-      <span class="pill">РўСЂРµРІРѕРіР°: ${alarm ? 'Р”Р°' : 'РќРµС‚'}</span>
-      <span class="pill">GSM: ${gsmOk ? 'Р”РѕСЃС‚СѓРїРµРЅ' : 'РќРµС‚ СЃРІСЏР·Рё'}</span>
-      <span class="pill">РљРѕРЅС‚СѓСЂ: ${enabled ? 'Р’РєР»СЋС‡РµРЅ' : 'РћС‚РєР»СЋС‡РµРЅ'}</span>
+      <span class="pill">Статус: ${armed ? 'На охране' : 'Снято'}</span>
+      <span class="pill">Тревога: ${alarm ? 'Да' : 'Нет'}</span>
+      <span class="pill">GSM: ${gsmOk ? 'Доступен' : 'Нет связи'}</span>
+      <span class="pill">Контур: ${enabled ? 'Включен' : 'Отключен'}</span>
     `;
 
     this.deviceSecurityActions.querySelectorAll('button[data-action]').forEach(btn => {
@@ -980,7 +980,7 @@ export class Ui {
     });
 
     if (!sensors.length) {
-      this.deviceSecurityGrid.innerHTML = this.renderEmptyState('РќРµС‚ РґР°РЅРЅС‹С… РїРѕ РґР°С‚С‡РёРєР°Рј');
+      this.deviceSecurityGrid.innerHTML = this.renderEmptyState('Нет данных по датчикам');
       return;
     }
 
@@ -988,7 +988,7 @@ export class Ui {
       const isEnabled = Boolean(sensor.enabled);
       const detect = Boolean(sensor.detect);
       const type = String(sensor.type || '').toLowerCase();
-      const name = sensor.name || `Р”Р°С‚С‡РёРє ${Number(sensor.id)}`;
+      const name = sensor.name || `Датчик ${Number(sensor.id)}`;
       const silent = Boolean(sensor.silent);
       const iconClass = !isEnabled ? 'off' : (detect ? 'alert' : 'on');
       return `
@@ -1006,9 +1006,9 @@ export class Ui {
               <div class="socket-name">${esc(name)}</div>
               <span class="status-dot ${!isEnabled ? 'status-off' : (detect ? 'status-err' : 'status-on')}"></span>
             </div>
-            <div class="socket-meta">${!isEnabled ? 'РћС‚РєР»СЋС‡РµРЅ' : (detect ? 'РЎСЂР°Р±РѕС‚Р°Р»' : 'РђРєС‚РёРІРµРЅ')}</div>
-            <div class="socket-meta">РўРёРї: <span class="meta-value">${esc(type || '-')}</span></div>
-            <div class="socket-meta">РўРёС…РёР№: <span class="meta-value">${silent ? 'Р”Р°' : 'РќРµС‚'}</span></div>
+            <div class="socket-meta">${!isEnabled ? 'Отключен' : (detect ? 'Сработал' : 'Активен')}</div>
+            <div class="socket-meta">Тип: <span class="meta-value">${esc(type || '-')}</span></div>
+            <div class="socket-meta">Тихий: <span class="meta-value">${silent ? 'Да' : 'Нет'}</span></div>
           </div>
         </article>
       `;
@@ -1021,7 +1021,7 @@ export class Ui {
     const gsm = system.gsm || {};
 
     this.deviceWifiBody.innerHTML = `
-      <tr><td>Р РµР¶РёРј</td><td><strong>${esc(wifi.mode || '-')}</strong></td></tr>
+      <tr><td>Режим</td><td><strong>${esc(wifi.mode || '-')}</strong></td></tr>
       <tr><td>SSID</td><td><strong>${esc(wifi.ssid || '-')}</strong></td></tr>
       <tr><td>AP SSID</td><td><strong>${esc(wifi.ap_ssid || '-')}</strong></td></tr>
       <tr><td>IP</td><td><strong>${esc(wifi.ip || '-')}</strong></td></tr>
@@ -1029,19 +1029,19 @@ export class Ui {
     `;
 
     this.deviceGsmBody.innerHTML = `
-      <tr><td>Р’РєР»СЋС‡РµРЅ</td><td><strong>${gsm.enabled ? 'Р”Р°' : 'РќРµС‚'}</strong></td></tr>
-      <tr><td>РЎРѕСЃС‚РѕСЏРЅРёРµ</td><td><strong>${gsm.started ? 'Р—Р°РїСѓС‰РµРЅ' : 'РћСЃС‚Р°РЅРѕРІР»РµРЅ'}</strong></td></tr>
+      <tr><td>Включен</td><td><strong>${gsm.enabled ? 'Да' : 'Нет'}</strong></td></tr>
+      <tr><td>Состояние</td><td><strong>${gsm.started ? 'Запущен' : 'Остановлен'}</strong></td></tr>
       <tr><td>IMEI</td><td><strong>${esc(gsm.imei || '-')}</strong></td></tr>
       <tr><td>IMSI</td><td><strong>${esc(gsm.imsi || '-')}</strong></td></tr>
-      <tr><td>РћРїРµСЂР°С‚РѕСЂ</td><td><strong>${esc(gsm.operator || '-')}</strong></td></tr>
-      <tr><td>РЎРёРіРЅР°Р»</td><td><strong>${esc(gsm.signal || '-')}</strong></td></tr>
-      <tr><td>Р РµРіРёСЃС‚СЂР°С†РёСЏ</td><td><strong>${esc(gsm.reg_status || '-')}</strong></td></tr>
-      <tr><td>РћС€РёР±РєР°</td><td><strong>${esc(gsm.last_error || '-')}</strong></td></tr>
+      <tr><td>Оператор</td><td><strong>${esc(gsm.operator || '-')}</strong></td></tr>
+      <tr><td>Сигнал</td><td><strong>${esc(gsm.signal || '-')}</strong></td></tr>
+      <tr><td>Регистрация</td><td><strong>${esc(gsm.reg_status || '-')}</strong></td></tr>
+      <tr><td>Ошибка</td><td><strong>${esc(gsm.last_error || '-')}</strong></td></tr>
       <tr><td>URC</td><td><strong>${esc(gsm.last_urc || '-')}</strong></td></tr>
-      <tr><td>Р—РІРѕРЅРѕРє</td><td><strong>${esc(gsm.last_call || '-')}</strong></td></tr>
-      <tr><td>USSD Р·Р°РїСЂРѕСЃ</td><td><strong>${esc(gsm.last_ussd || '-')}</strong></td></tr>
-      <tr><td>HTTP РєРѕРґ</td><td><strong>${esc(gsm.last_http_status ?? '-')}</strong></td></tr>
-      <tr><td>HTTP РґР»РёРЅР°</td><td><strong>${esc(gsm.last_http_len ?? '-')}</strong></td></tr>
+      <tr><td>Звонок</td><td><strong>${esc(gsm.last_call || '-')}</strong></td></tr>
+      <tr><td>USSD запрос</td><td><strong>${esc(gsm.last_ussd || '-')}</strong></td></tr>
+      <tr><td>HTTP код</td><td><strong>${esc(gsm.last_http_status ?? '-')}</strong></td></tr>
+      <tr><td>HTTP длина</td><td><strong>${esc(gsm.last_http_len ?? '-')}</strong></td></tr>
     `;
   }
 
@@ -1049,15 +1049,15 @@ export class Ui {
     if (!this.deviceThermoGrid) return;
     const list = asArray(detail?.controllers?.thermo);
     if (!list.length) {
-      this.deviceThermoGrid.innerHTML = this.renderEmptyState('РќРµС‚ РґР°РЅРЅС‹С… РїРѕ С‚РµСЂРјРѕ');
+      this.deviceThermoGrid.innerHTML = this.renderEmptyState('Нет данных по термо');
       return;
     }
     const modeLabel = (mode) => {
       const m = String(mode || 'off');
-      if (m === 'heat_only') return 'РЅР°РіСЂРµРІ';
-      if (m === 'cool_only') return 'РѕС…Р»Р°Р¶РґРµРЅРёРµ';
-      if (m === 'auto') return 'Р°РІС‚Рѕ';
-      return 'РІС‹РєР»';
+      if (m === 'heat_only') return 'нагрев';
+      if (m === 'cool_only') return 'охлаждение';
+      if (m === 'auto') return 'авто';
+      return 'выкл';
     };
     this.deviceThermoGrid.innerHTML = list.map(item => {
       const id = Number(item?.id);
@@ -1070,16 +1070,16 @@ export class Ui {
       const sensor = Number(item?.temp_c ?? item?.sensor_temp_c);
       const targetText = Number.isFinite(target) ? target.toFixed(1) : '--';
       const sensorText = Number.isFinite(sensor) ? sensor.toFixed(1) : '--';
-      const statusText = heatOn ? 'РЅР°РіСЂРµРІ' : (coolOn ? 'РѕС…Р»Р°Р¶РґРµРЅРёРµ' : 'РѕР¶РёРґР°РЅРёРµ');
+      const statusText = heatOn ? 'нагрев' : (coolOn ? 'охлаждение' : 'ожидание');
       const statusClass = heatOn ? 'status-text-heat' : (coolOn ? 'status-text-cool' : 'status-text-idle');
       return `
         <article class="tile ${enabled ? '' : 'disabled'}" data-thermo-id="${id}" data-power-on="${powerOn ? '1' : '0'}" data-mode="${esc(mode)}" data-target="${Number.isFinite(target) ? target.toFixed(1) : ''}">
           <div class="thermo-left">
             <div class="thermo-visual">
               <span class="socket-chip">#${id}</span>
-              <span class="temp-pill sensor">Р”Р°С‚С‡РёРє: <span class="temp-value">${esc(sensorText)}</span>&deg;C</span>
+              <span class="temp-pill sensor">Датчик: <span class="temp-value">${esc(sensorText)}</span>&deg;C</span>
               ${thermoStatusVisualSvg(mode, heatOn, coolOn)}
-              <span class="temp-pill target">Р¦РµР»СЊ: <span class="temp-value">${esc(targetText)}</span>&deg;C</span>
+              <span class="temp-pill target">Цель: <span class="temp-value">${esc(targetText)}</span>&deg;C</span>
             </div>
             <div class="status-line">
               <span class="status-dot ${heatOn ? 'status-heat' : (coolOn ? 'status-cool' : 'status-idle')}"></span>
@@ -1089,18 +1089,18 @@ export class Ui {
           </div>
           <div class="socket-main">
             <div class="socket-head">
-              <div class="socket-name">${esc(item?.name || `РўРµСЂРјРѕ ${id}`)}</div>
+              <div class="socket-name">${esc(item?.name || `Термо ${id}`)}</div>
               ${onOffDot(enabled)}
             </div>
             <div class="metric-grid">
-              <span class="metric-chip ${powerOn ? 'is-on' : 'is-off'}"><span class="metric-label">РџРёС‚Р°РЅРёРµ</span><span class="metric-value">${powerOn ? 'Р’РљР›' : 'Р’Р«РљР›'}</span></span>
-              <span class="metric-chip is-running"><span class="metric-label">Р РµР¶РёРј</span><span class="metric-value">${modeLabel(mode)}</span></span>
-              <span class="metric-chip ${heatOn ? 'is-hot' : 'is-off'}"><span class="metric-label">РќР°РіСЂРµРІ</span><span class="metric-value">${heatOn ? 'Р’РљР›' : 'Р’Р«РљР›'}</span></span>
-              <span class="metric-chip ${coolOn ? 'is-cool' : 'is-off'}"><span class="metric-label">РћС…Р»Р°Р¶РґРµРЅРёРµ</span><span class="metric-value">${coolOn ? 'Р’РљР›' : 'Р’Р«РљР›'}</span></span>
+              <span class="metric-chip ${powerOn ? 'is-on' : 'is-off'}"><span class="metric-label">Питание</span><span class="metric-value">${powerOn ? 'ВКЛ' : 'ВЫКЛ'}</span></span>
+              <span class="metric-chip is-running"><span class="metric-label">Режим</span><span class="metric-value">${modeLabel(mode)}</span></span>
+              <span class="metric-chip ${heatOn ? 'is-hot' : 'is-off'}"><span class="metric-label">Нагрев</span><span class="metric-value">${heatOn ? 'ВКЛ' : 'ВЫКЛ'}</span></span>
+              <span class="metric-chip ${coolOn ? 'is-cool' : 'is-off'}"><span class="metric-label">Охлаждение</span><span class="metric-value">${coolOn ? 'ВКЛ' : 'ВЫКЛ'}</span></span>
             </div>
             <div class="socket-actions action-row">
-              <button class="ghost btn-sm ${powerOn ? 'btn-off' : 'btn-on'}" data-action="power-toggle" ${enabled ? '' : 'disabled'}>${powerOn ? 'РџРёС‚Р°РЅРёРµ Р’Р«РљР›' : 'РџРёС‚Р°РЅРёРµ Р’РљР›'}</button>
-              <button class="ghost btn-sm" data-action="mode-cycle" ${enabled ? '' : 'disabled'}>Р РµР¶РёРј</button>
+              <button class="ghost btn-sm ${powerOn ? 'btn-off' : 'btn-on'}" data-action="power-toggle" ${enabled ? '' : 'disabled'}>${powerOn ? 'Питание ВЫКЛ' : 'Питание ВКЛ'}</button>
+              <button class="ghost btn-sm" data-action="mode-cycle" ${enabled ? '' : 'disabled'}>Режим</button>
               <button class="ghost btn-sm" data-action="target-down" ${enabled ? '' : 'disabled'}>-0.5 &deg;C</button>
               <button class="ghost btn-sm" data-action="target-up" ${enabled ? '' : 'disabled'}>+0.5 &deg;C</button>
             </div>
@@ -1114,7 +1114,7 @@ export class Ui {
     if (!this.deviceSepticGrid) return;
     const list = asArray(detail?.controllers?.septic);
     if (!list.length) {
-      this.deviceSepticGrid.innerHTML = this.renderEmptyState('РќРµС‚ РґР°РЅРЅС‹С… РїРѕ СЃРµРїС‚РёРєСѓ');
+      this.deviceSepticGrid.innerHTML = this.renderEmptyState('Нет данных по септику');
       return;
     }
     this.deviceSepticGrid.innerHTML = list.map(item => {
@@ -1124,7 +1124,7 @@ export class Ui {
       const warning = Boolean(item?.warning);
       const alarm = Boolean(item?.alarm);
       const levelClass = alarm ? 'water-alarm' : (warning ? 'water-warn' : 'water-low');
-      const levelText = alarm ? '??????' : (warning ? '????????' : '?????');
+      const levelText = alarm ? 'АВАРИЯ' : (warning ? 'ВНИМАНИЕ' : 'НОРМА');
       return `
         <article class="tile ${enabled ? '' : 'disabled'}" data-septic-id="${id}" data-monitor="${monitor ? '1' : '0'}">
           <div class="thermo-left">
@@ -1139,13 +1139,13 @@ export class Ui {
             </div>
             <div class="status-line">
               <span class="status-dot ${alarm ? 'status-err' : (warning ? 'status-cool' : 'status-on')}"></span>
-              <span class="status-value">${alarm ? 'РўСЂРµРІРѕРіР°' : (warning ? 'РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёРµ' : 'РќРѕСЂРјР°')}</span>
+              <span class="status-value">${alarm ? 'Тревога' : (warning ? 'Предупреждение' : 'Норма')}</span>
               <span class="badge">#${id}</span>
             </div>
           </div>
           <div class="socket-main">
             <div class="socket-head">
-              <div class="socket-name">${esc(item?.name || `РЎРµРїС‚РёРє ${id}`)}</div>
+              <div class="socket-name">${esc(item?.name || `Септик ${id}`)}</div>
               ${onOffDot(enabled)}
             </div>
             <div class="mini-state-grid">
@@ -1157,8 +1157,8 @@ export class Ui {
                     <circle cx="12" cy="12" r="7"></circle>
                   </svg>
                 </span>
-                <span class="mini-state-label">РњРѕРЅРёС‚РѕСЂРёРЅРі</span>
-                <span class="mini-state-value">${monitor ? 'Р’РљР›' : 'Р’Р«РљР›'}</span>
+                <span class="mini-state-label">Мониторинг</span>
+                <span class="mini-state-value">${monitor ? 'ВКЛ' : 'ВЫКЛ'}</span>
               </div>
               <div class="mini-state-item ${warning ? 'is-warn' : 'is-off'}">
                 <span class="mini-state-icon" aria-hidden="true">
@@ -1168,8 +1168,8 @@ export class Ui {
                     <circle cx="12" cy="16.5" r="0.8" class="mini-state-fill"></circle>
                   </svg>
                 </span>
-                <span class="mini-state-label">РџСЂРµРґСѓРїСЂРµР¶РґРµРЅРёРµ</span>
-                <span class="mini-state-value">${warning ? 'Р’РљР›' : 'Р’Р«РљР›'}</span>
+                <span class="mini-state-label">Предупреждение</span>
+                <span class="mini-state-value">${warning ? 'ВКЛ' : 'ВЫКЛ'}</span>
               </div>
               <div class="mini-state-item ${alarm ? 'is-alarm' : 'is-ok'}">
                 <span class="mini-state-icon" aria-hidden="true">
@@ -1179,12 +1179,12 @@ export class Ui {
                     <circle cx="12" cy="16.5" r="0.8" class="mini-state-fill"></circle>
                   </svg>
                 </span>
-                <span class="mini-state-label">РђРІР°СЂРёСЏ</span>
-                <span class="mini-state-value">${alarm ? 'Р’РљР›' : 'Р’Р«РљР›'}</span>
+                <span class="mini-state-label">Авария</span>
+                <span class="mini-state-value">${alarm ? 'ВКЛ' : 'ВЫКЛ'}</span>
               </div>
             </div>
             <div class="socket-actions action-row">
-              <button class="ghost btn-sm ${monitor ? 'btn-off' : 'btn-on'}" data-action="monitor-toggle" ${enabled ? '' : 'disabled'}>${monitor ? 'РњРѕРЅРёС‚РѕСЂРёРЅРі Р’Р«РљР›' : 'РњРѕРЅРёС‚РѕСЂРёРЅРі Р’РљР›'}</button>
+              <button class="ghost btn-sm ${monitor ? 'btn-off' : 'btn-on'}" data-action="monitor-toggle" ${enabled ? '' : 'disabled'}>${monitor ? 'Мониторинг ВЫКЛ' : 'Мониторинг ВКЛ'}</button>
             </div>
           </div>
         </article>
@@ -1196,7 +1196,7 @@ export class Ui {
     if (!this.deviceWateringGrid) return;
     const list = asArray(detail?.controllers?.watering);
     if (!list.length) {
-      this.deviceWateringGrid.innerHTML = this.renderEmptyState('РќРµС‚ РґР°РЅРЅС‹С… РїРѕ РїРѕР»РёРІСѓ');
+      this.deviceWateringGrid.innerHTML = this.renderEmptyState('Нет данных по поливу');
       return;
     }
     this.deviceWateringGrid.innerHTML = list.map(item => {
@@ -1206,7 +1206,7 @@ export class Ui {
       const paused = Boolean(item?.paused);
       const resume = Boolean(item?.resume);
       const left = Number(item?.left_min ?? item?.left ?? item?.minutes_left);
-      const leftText = Number.isFinite(left) && left >= 0 ? `${Math.round(left)} РјРёРЅ` : '-';
+      const leftText = Number.isFinite(left) && left >= 0 ? `${Math.round(left)} мин` : '-';
       return `
         <article class="tile watering-item ${enabled ? '' : 'disabled'}" data-watering-id="${id}" data-status="${active ? '1' : '0'}" data-active="${active ? '1' : '0'}">
           <div class="thermo-left">
@@ -1216,27 +1216,27 @@ export class Ui {
                 <path d="M8 34h20v10h8V34h8c6 0 12 5 12 12v2"/>
                 <path d="M56 52c0 4-3 6-6 6s-6-2-6-6c0-4 6-10 6-10s6 6 6 10z"/>
               </svg>
-              <span class="level-label">${active ? 'Р РђР‘РћРўРђ' : 'РџР РћРЎРўРћР™'}</span>
+              <span class="level-label">${active ? 'РАБОТА' : 'ПРОСТОЙ'}</span>
             </div>
             <div class="status-line">
               <span class="status-dot ${active ? 'status-on' : 'status-idle'}"></span>
-              <span class="status-value">${active ? 'РђРєС‚РёРІРµРЅ' : 'РћСЃС‚Р°РЅРѕРІР»РµРЅ'}</span>
+              <span class="status-value">${active ? 'Активен' : 'Остановлен'}</span>
               <span class="badge">#${id}</span>
             </div>
           </div>
           <div class="socket-main">
             <div class="socket-head">
-              <div class="socket-name">${esc(item?.name || `РџРѕР»РёРІ ${id}`)}</div>
+              <div class="socket-name">${esc(item?.name || `Полив ${id}`)}</div>
               ${onOffDot(enabled)}
             </div>
             <div class="metric-grid">
-              <span class="metric-chip ${active ? 'is-on' : 'is-off'}"><span class="metric-label">РЎС‚Р°С‚СѓСЃ</span><span class="metric-value">${active ? 'Р’РљР›' : 'Р’Р«РљР›'}</span></span>
-              <span class="metric-chip ${paused ? 'is-warn' : 'is-off'}"><span class="metric-label">РџР°СѓР·Р°</span><span class="metric-value">${paused ? 'Р”Рђ' : 'РќР•Рў'}</span></span>
-              <span class="metric-chip ${resume ? 'is-running' : 'is-off'}"><span class="metric-label">Р’РѕР·РѕР±РЅРѕРІР»РµРЅРёРµ</span><span class="metric-value">${resume ? 'Р’РљР›' : 'Р’Р«РљР›'}</span></span>
-              <span class="metric-chip is-off"><span class="metric-label">РћСЃС‚Р°Р»РѕСЃСЊ</span><span class="metric-value">${esc(leftText)}</span></span>
+              <span class="metric-chip ${active ? 'is-on' : 'is-off'}"><span class="metric-label">Статус</span><span class="metric-value">${active ? 'ВКЛ' : 'ВЫКЛ'}</span></span>
+              <span class="metric-chip ${paused ? 'is-warn' : 'is-off'}"><span class="metric-label">Пауза</span><span class="metric-value">${paused ? 'ДА' : 'НЕТ'}</span></span>
+              <span class="metric-chip ${resume ? 'is-running' : 'is-off'}"><span class="metric-label">Возобновление</span><span class="metric-value">${resume ? 'ВКЛ' : 'ВЫКЛ'}</span></span>
+              <span class="metric-chip is-off"><span class="metric-label">Осталось</span><span class="metric-value">${esc(leftText)}</span></span>
             </div>
             <div class="socket-actions action-row">
-              <button class="ghost btn-sm ${active ? 'btn-off' : 'btn-on'}" data-action="status-toggle" ${enabled ? '' : 'disabled'}>${active ? 'РЎС‚Р°С‚СѓСЃ Р’Р«РљР›' : 'РЎС‚Р°С‚СѓСЃ Р’РљР›'}</button>
+              <button class="ghost btn-sm ${active ? 'btn-off' : 'btn-on'}" data-action="status-toggle" ${enabled ? '' : 'disabled'}>${active ? 'Статус ВЫКЛ' : 'Статус ВКЛ'}</button>
             </div>
           </div>
         </article>
@@ -1248,7 +1248,7 @@ export class Ui {
     if (!this.deviceRingWrap) return;
     const ring = detail?.controllers?.ring || null;
     if (!ring || typeof ring !== 'object') {
-      this.deviceRingWrap.innerHTML = this.renderEmptyState('РќРµС‚ РґР°РЅРЅС‹С… РїРѕ Р·РІРѕРЅРєСѓ');
+      this.deviceRingWrap.innerHTML = this.renderEmptyState('Нет данных по звонку');
       return;
     }
     const enabled = Boolean(ring.enabled);
@@ -1257,14 +1257,14 @@ export class Ui {
     this.deviceRingWrap.innerHTML = `
       <article class="ring-card ${enabled ? '' : 'disabled'}">
         <div class="ring-head">
-          <span class="pill">РЎС‚Р°С‚СѓСЃ: ${enabled ? 'РґРѕСЃС‚СѓРїРµРЅ' : 'РѕС‚РєР»СЋС‡РµРЅ'}</span>
+          <span class="pill">Статус: ${enabled ? 'доступен' : 'отключен'}</span>
         </div>
         <div class="state-indicators">
-          <span class="state-item"><span class="state-dot ${relayOn ? 'net-on' : ''}"></span> Р РµР»Рµ: <strong>${relayOn ? 'Р’РљР›' : 'Р’Р«РљР›'}</strong></span>
-          <span class="state-item"><span class="state-dot ${buttonOn ? 'net-on' : ''}"></span> РљРЅРѕРїРєР°: <strong>${buttonOn ? 'Р’РљР›' : 'Р’Р«РљР›'}</strong></span>
+          <span class="state-item"><span class="state-dot ${relayOn ? 'net-on' : ''}"></span> Реле: <strong>${relayOn ? 'ВКЛ' : 'ВЫКЛ'}</strong></span>
+          <span class="state-item"><span class="state-dot ${buttonOn ? 'net-on' : ''}"></span> Кнопка: <strong>${buttonOn ? 'ВКЛ' : 'ВЫКЛ'}</strong></span>
         </div>
         <div class="socket-actions">
-          <button class="ghost btn-sm ${relayOn ? 'btn-off' : 'btn-on'}" data-action="ring-hold" ${enabled ? '' : 'disabled'}>${relayOn ? 'РЈРґРµСЂР¶Р°РЅРёРµ Р’РљР›' : 'РЈРґРµСЂР¶Р°РЅРёРµ Р’Р«РљР›'}</button>
+          <button class="ghost btn-sm ${relayOn ? 'btn-off' : 'btn-on'}" data-action="ring-hold" ${enabled ? '' : 'disabled'}>${relayOn ? 'Удержание ВКЛ' : 'Удержание ВЫКЛ'}</button>
         </div>
       </article>
     `;
@@ -1274,14 +1274,14 @@ export class Ui {
     if (!this.deviceAvrWrap) return;
     const avr = detail?.controllers?.avr || null;
     if (!avr || typeof avr !== 'object') {
-      this.deviceAvrWrap.innerHTML = this.renderEmptyState('РќРµС‚ РґР°РЅРЅС‹С… РїРѕ РђР’Р ');
+      this.deviceAvrWrap.innerHTML = this.renderEmptyState('Нет данных по АВР');
       return;
     }
     const enabled = Boolean(avr.enabled);
     const autoMode = Boolean(avr.auto_mode ?? avr.auto);
     const active = String(avr.active_source || avr.source || '-');
-    const source1 = String(avr.source1 || 'РѕСЃРЅРѕРІРЅРѕР№');
-    const source2 = String(avr.source2 || 'СЂРµР·РµСЂРІ');
+    const source1 = String(avr.source1 || 'основной');
+    const source2 = String(avr.source2 || 'резерв');
     const fault = String(avr.fault || 'none');
     const faultActive = fault !== 'none' && fault !== 'ok' && fault !== '-';
     this.deviceAvrWrap.innerHTML = `
@@ -1299,8 +1299,8 @@ export class Ui {
                 <circle cx="12" cy="12" r="4"></circle>
               </svg>
             </span>
-            <span class="mini-state-label">РђРІС‚Рѕ</span>
-            <span class="mini-state-value">${autoMode ? 'Р’РљР›' : 'Р’Р«РљР›'}</span>
+            <span class="mini-state-label">Авто</span>
+            <span class="mini-state-value">${autoMode ? 'ВКЛ' : 'ВЫКЛ'}</span>
           </div>
           <div class="mini-state-item is-running">
             <span class="mini-state-icon" aria-hidden="true">
@@ -1312,7 +1312,7 @@ export class Ui {
                 <path d="M10 12h4"></path>
               </svg>
             </span>
-            <span class="mini-state-label">????????</span>
+            <span class="mini-state-label">Источник</span>
             <span class="mini-state-value">${esc(active)}</span>
           </div>
           <div class="mini-state-item ${faultActive ? 'is-alarm' : 'is-ok'}">
@@ -1323,16 +1323,16 @@ export class Ui {
                 <circle cx="12" cy="16.5" r="0.8" class="mini-state-fill"></circle>
               </svg>
             </span>
-            <span class="mini-state-label">РђРІР°СЂРёСЏ</span>
+            <span class="mini-state-label">Авария</span>
             <span class="mini-state-value">${esc(fault)}</span>
           </div>
         </div>
-        <div class="group-title">РЈРїСЂР°РІР»РµРЅРёРµ</div>
+        <div class="group-title">Управление</div>
         <div class="socket-actions">
-          <button class="ghost btn-sm ${autoMode ? 'btn-off' : 'btn-on'}" data-action="auto-toggle" ${enabled ? '' : 'disabled'}>${autoMode ? 'РђРІС‚Рѕ Р’Р«РљР›' : 'РђРІС‚Рѕ Р’РљР›'}</button>
+          <button class="ghost btn-sm ${autoMode ? 'btn-off' : 'btn-on'}" data-action="auto-toggle" ${enabled ? '' : 'disabled'}>${autoMode ? 'Авто ВЫКЛ' : 'Авто ВКЛ'}</button>
           <button class="ghost btn-sm" data-action="source" data-source="${esc(source1)}" ${enabled ? '' : 'disabled'}>${esc(source1)}</button>
           <button class="ghost btn-sm" data-action="source" data-source="${esc(source2)}" ${enabled ? '' : 'disabled'}>${esc(source2)}</button>
-          <button class="ghost btn-sm" data-action="clear-fault" ${enabled ? '' : 'disabled'}>РЎР±СЂРѕСЃ Р°РІР°СЂРёРё</button>
+          <button class="ghost btn-sm" data-action="clear-fault" ${enabled ? '' : 'disabled'}>Сброс аварии</button>
         </div>
       </article>
     `;
@@ -1342,7 +1342,7 @@ export class Ui {
     if (!this.deviceLeakGrid) return;
     const list = asArray(detail?.controllers?.leak);
     if (!list.length) {
-      this.deviceLeakGrid.innerHTML = this.renderEmptyState('РќРµС‚ РґР°РЅРЅС‹С… РїРѕ РїСЂРѕС‚РµС‡РєР°Рј');
+      this.deviceLeakGrid.innerHTML = this.renderEmptyState('Нет данных по протечкам');
       return;
     }
     this.deviceLeakGrid.innerHTML = list.map(item => {
@@ -1363,13 +1363,13 @@ export class Ui {
             ${onOffDot(enabled)}
           </div>
           <div class="tile-grid">
-            <span class="metric-chip ${powerOn ? 'is-on' : 'is-off'}"><span class="metric-label">РџРёС‚Р°РЅРёРµ</span><span class="metric-value">${powerOn ? 'Р’РљР›' : 'Р’Р«РљР›'}</span></span>
-            <span class="metric-chip ${wet ? 'is-alarm' : 'is-off'}"><span class="metric-label">Р’Р»Р°РіР°</span><span class="metric-value">${wet ? 'Р”Рђ' : 'РќР•Рў'}</span></span>
-            <span class="metric-chip ${alarmLatched ? 'is-warn' : 'is-off'}"><span class="metric-label">Р¤РёРєСЃР°С†РёСЏ</span><span class="metric-value">${alarmLatched ? 'Р”Рђ' : 'РќР•Рў'}</span></span>
+            <span class="metric-chip ${powerOn ? 'is-on' : 'is-off'}"><span class="metric-label">Питание</span><span class="metric-value">${powerOn ? 'ВКЛ' : 'ВЫКЛ'}</span></span>
+            <span class="metric-chip ${wet ? 'is-alarm' : 'is-off'}"><span class="metric-label">Влага</span><span class="metric-value">${wet ? 'ДА' : 'НЕТ'}</span></span>
+            <span class="metric-chip ${alarmLatched ? 'is-warn' : 'is-off'}"><span class="metric-label">Фиксация</span><span class="metric-value">${alarmLatched ? 'ДА' : 'НЕТ'}</span></span>
           </div>
           <div class="socket-actions">
-            <button class="ghost btn-sm ${powerOn ? 'btn-off' : 'btn-on'}" data-action="power-toggle" ${enabled ? '' : 'disabled'}>${powerOn ? 'РџРёС‚Р°РЅРёРµ Р’Р«РљР›' : 'РџРёС‚Р°РЅРёРµ Р’РљР›'}</button>
-            <button class="ghost btn-sm" data-action="ack" ${enabled ? '' : 'disabled'}>РЎР±СЂРѕСЃ</button>
+            <button class="ghost btn-sm ${powerOn ? 'btn-off' : 'btn-on'}" data-action="power-toggle" ${enabled ? '' : 'disabled'}>${powerOn ? 'Питание ВЫКЛ' : 'Питание ВКЛ'}</button>
+            <button class="ghost btn-sm" data-action="ack" ${enabled ? '' : 'disabled'}>Сброс</button>
           </div>
         </article>
       `;
@@ -1379,7 +1379,7 @@ export class Ui {
   renderAdminDevices(devices, objects, onRotate, onDelete, onMoveObject) {
     this.adminDevices.innerHTML = '';
     if (!devices.length) {
-      this.adminDevices.textContent = 'РќРµС‚ СѓСЃС‚СЂРѕР№СЃС‚РІ';
+      this.adminDevices.textContent = 'Нет устройств';
       return;
     }
     for (const device of devices) {
@@ -1397,10 +1397,10 @@ export class Ui {
               <circle cx="46" cy="42" r="2.5" fill="currentColor"/>
               <path d="M6 20h6M6 28h6M6 36h6M6 44h6M52 20h6M52 28h6M52 36h6M52 44h6" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
             </svg>
-            <div><strong>${device.name || 'Р‘РµР· РёРјРµРЅРё'}</strong> (#${device.device_id})</div>
+            <div><strong>${device.name || 'Без имени'}</strong> (#${device.device_id})</div>
           </div>
-          <div class="muted">${device.object_name} В· ${device.online ? 'РѕРЅР»Р°Р№РЅ' : 'РѕС„С„Р»Р°Р№РЅ'}</div>
-          <div class="key">API-РєР»СЋС‡: ${device.api_key}</div>
+          <div class="muted">${device.object_name} · ${device.online ? 'онлайн' : 'оффлайн'}</div>
+          <div class="key">API-ключ: ${device.api_key}</div>
         </div>
       `;
       const actions = document.createElement('div');
@@ -1421,11 +1421,11 @@ export class Ui {
       objectSelect.addEventListener('change', () => onMoveObject(device, objectSelect.value));
       const rotate = document.createElement('button');
       rotate.className = 'ghost';
-      rotate.textContent = 'РЎРјРµРЅРёС‚СЊ РєР»СЋС‡';
+      rotate.textContent = 'Сменить ключ';
       rotate.addEventListener('click', () => onRotate(device));
       const del = document.createElement('button');
       del.className = 'ghost danger';
-      del.textContent = 'РЈРґР°Р»РёС‚СЊ';
+      del.textContent = 'Удалить';
       del.addEventListener('click', () => onDelete(device));
       actions.appendChild(objectSelect);
       actions.appendChild(rotate);
@@ -1438,7 +1438,7 @@ export class Ui {
   renderAdminObjects(objects, onDelete, onRename, onIconChange) {
     this.adminObjects.innerHTML = '';
     if (!objects.length) {
-      this.adminObjects.textContent = 'РќРµС‚ РѕР±СЉРµРєС‚РѕРІ';
+      this.adminObjects.textContent = 'Нет объектов';
       return;
     }
     for (const raw of objects) {
@@ -1468,11 +1468,11 @@ export class Ui {
       iconSelect.addEventListener('change', () => onIconChange(objectName, iconSelect.value));
       const rename = document.createElement('button');
       rename.className = 'ghost';
-      rename.textContent = 'РџРµСЂРµРёРјРµРЅРѕРІР°С‚СЊ';
+      rename.textContent = 'Переименовать';
       rename.addEventListener('click', () => onRename(objectName));
       const del = document.createElement('button');
       del.className = 'ghost danger';
-      del.textContent = 'РЈРґР°Р»РёС‚СЊ';
+      del.textContent = 'Удалить';
       del.addEventListener('click', () => onDelete(objectName));
       actions.appendChild(iconSelect);
       actions.appendChild(rename);
