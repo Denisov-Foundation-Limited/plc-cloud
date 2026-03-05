@@ -55,7 +55,9 @@ export class WebWsServer {
             devices: devices.map(d => ({
               device_id: d.device_id,
               name: d.name,
-              object_name: d.object_name
+              object_name: d.object_name,
+              online: Boolean(d.online),
+              stack: d.stack || null
             }))
           });
           return;

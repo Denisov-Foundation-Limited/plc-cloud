@@ -12,9 +12,11 @@ export const state = {
   ws: null,
   objects: [],
   currentObject: null,
+  devicesRaw: [],
   devices: [],
   currentDevice: null,
   currentDeviceData: null,
   currentUnit: 'local',
-  currentNodeId: null
+  currentNodeId: null,
+  targetByDevice: {}
 };

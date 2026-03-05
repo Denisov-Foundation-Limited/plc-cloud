@@ -22,6 +22,7 @@ export class DeviceWsServer {
     this.onDeviceOnline = onDeviceOnline;
     this.onDeviceOffline = onDeviceOffline;
     this.onDeviceUpdate = onDeviceUpdate;
+    this.pendingScopes = new Map();
   }
 
   init() {
@@ -229,7 +230,17 @@ export class DeviceWsServer {
     if (message.type === 'result' || message.type === 'ack') {
       const data = message.payload?.data;
       if (data && typeof data === 'object') {
-        this.registry.registerState(deviceId, { ...data });
+        const replyKey = message.reply_to || null;
+        const pendingScope = replyKey ? this.pendingScopes.get(String(replyKey)) : null;
+        const scopeUnit = message.unit || pendingScope?.unit;
+        const scopeNodeId = message.node_id ?? pendingScope?.node_id;
+        this.registry.registerState(deviceId, { ...data }, {
+          unit: scopeUnit,
+          node_id: scopeNodeId
+        });
+      }
+      if (message.reply_to) {
+        this.pendingScopes.delete(String(message.reply_to));
       }
     }
 
@@ -284,6 +295,11 @@ export class DeviceWsServer {
     if (unit === 'stack' && nodeId) {
       msg.node_id = Number(nodeId);
     }
+    this.pendingScopes.set(String(id), {
+      deviceId: Number(deviceId),
+      unit,
+      node_id: unit === 'stack' && nodeId ? Number(nodeId) : null
+    });
     this.send(session.ws, msg);
     return { ok: true, id };
   }
@@ -307,6 +323,11 @@ export class DeviceWsServer {
     if (unit === 'stack' && nodeId) {
       msg.node_id = Number(nodeId);
     }
+    this.pendingScopes.set(String(id), {
+      deviceId: Number(deviceId),
+      unit,
+      node_id: unit === 'stack' && nodeId ? Number(nodeId) : null
+    });
     this.send(session.ws, msg);
     return { ok: true, id };
   }

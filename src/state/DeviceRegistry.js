@@ -75,9 +75,52 @@ export class DeviceRegistry {
     return Date.now() - session.lastSeenMs < this.onlineTtlMs;
   }
 
-  registerState(deviceId, patch) {
+  registerState(deviceId, patch, scope = null) {
     const session = this.sessions.get(this.normalizeDeviceId(deviceId));
     if (!session) return;
+    const unit = scope?.unit === 'stack' ? 'stack' : 'local';
+    const nodeId = Number(scope?.node_id);
+    if (unit === 'stack' && Number.isFinite(nodeId) && nodeId > 0) {
+      const key = String(nodeId);
+      const stackUnits = {
+        ...(session.state?.stack_units || {})
+      };
+      const prev = stackUnits[key] || {};
+      const prevSystem = (prev.system && typeof prev.system === 'object') ? prev.system : null;
+      const patchSystem = (patch.system && typeof patch.system === 'object') ? patch.system : null;
+      const prevControllers = (prev.controllers && typeof prev.controllers === 'object') ? prev.controllers : null;
+      const patchControllers = (patch.controllers && typeof patch.controllers === 'object') ? patch.controllers : null;
+      const mergedSystem = patchSystem
+        ? {
+            ...(prevSystem || {}),
+            ...patchSystem,
+            plc: patchSystem.plc ? { ...((prevSystem && prevSystem.plc) || {}), ...patchSystem.plc } : ((prevSystem && prevSystem.plc) || undefined),
+            rtc: patchSystem.rtc ? { ...((prevSystem && prevSystem.rtc) || {}), ...patchSystem.rtc } : ((prevSystem && prevSystem.rtc) || undefined),
+            fan: patchSystem.fan ? { ...((prevSystem && prevSystem.fan) || {}), ...patchSystem.fan } : ((prevSystem && prevSystem.fan) || undefined),
+            wifi: patchSystem.wifi ? { ...((prevSystem && prevSystem.wifi) || {}), ...patchSystem.wifi } : ((prevSystem && prevSystem.wifi) || undefined),
+            gsm: patchSystem.gsm ? { ...((prevSystem && prevSystem.gsm) || {}), ...patchSystem.gsm } : ((prevSystem && prevSystem.gsm) || undefined)
+          }
+        : (prevSystem || null);
+      const mergedControllers = patchControllers
+        ? {
+            ...(prevControllers || {}),
+            ...patchControllers
+          }
+        : (prevControllers || null);
+      stackUnits[key] = {
+        ...prev,
+        ...patch,
+        system: mergedSystem,
+        controllers: mergedControllers,
+        last_event: patch.last_event ?? prev.last_event ?? null,
+        updated_ms: Date.now()
+      };
+      session.state = {
+        ...session.state,
+        stack_units: stackUnits
+      };
+      return;
+    }
     session.state = {
       ...session.state,
       ...patch
@@ -101,6 +144,7 @@ export class DeviceRegistry {
       system: session.state?.system || null,
       controllers: session.state?.controllers || null,
       stack: session.state?.stack || null,
+      stack_units: session.state?.stack_units || null,
       last_event: session.state?.last_event || null
     };
   }
@@ -109,13 +153,18 @@ export class DeviceRegistry {
     const rows = await devicesDb.listDevicesByObject(objectName);
     return rows
       .filter(row => this.isOnline(row.device_id))
-      .map(row => ({
-        device_id: row.device_id,
-        name: row.name,
-        api_key: row.api_key,
-        object_name: row.object_name,
-        last_seen_ms: row.last_seen_ms || 0
-      }));
+      .map(row => {
+        const session = this.sessions.get(this.normalizeDeviceId(row.device_id));
+        return {
+          device_id: row.device_id,
+          name: row.name,
+          api_key: row.api_key,
+          object_name: row.object_name,
+          last_seen_ms: row.last_seen_ms || 0,
+          online: this.isOnline(row.device_id),
+          stack: session?.state?.stack || session?.hello?.stack || null
+        };
+      });
   }
 
   async listAllWithStatus(devicesDb) {

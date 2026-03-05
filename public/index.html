@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
@@ -11,13 +11,62 @@
     <header class="top">
       <div class="brand">PLC Cloud</div>
       <nav class="main-menu hidden" id="mainMenu">
-        <button class="ghost menu-btn" id="menuObjects">Объекты</button>
-        <button class="ghost menu-btn" id="menuSettings">Настройка</button>
+        <button class="ghost menu-btn" id="menuObjects">
+          <span class="menu-btn-content">
+            <svg class="menu-ico" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 10.5 12 4l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>Объекты</span>
+          </span>
+        </button>
+        <button class="ghost menu-btn" id="menuDevices">
+          <span class="menu-btn-content">
+            <svg class="menu-ico" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="4" y="5" width="16" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+              <rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" stroke="none"/>
+            </svg>
+            <span>Устройства</span>
+          </span>
+        </button>
+        <button class="ghost menu-btn" id="menuSettings">
+          <span class="menu-btn-content">
+            <svg class="menu-ico" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" fill="none" stroke="currentColor" stroke-width="1.8"/>
+              <path d="M19.4 15a7.8 7.8 0 0 0 .1-2l2-1.5-2-3.4-2.4.8a7.7 7.7 0 0 0-1.7-1L15 5h-6l-.4 2.9a7.7 7.7 0 0 0-1.7 1l-2.4-.8-2 3.4 2 1.5a7.8 7.8 0 0 0 .1 2l-2 1.5 2 3.4 2.4-.8a7.7 7.7 0 0 0 1.7 1L9 23h6l.4-2.9a7.7 7.7 0 0 0 1.7-1l2.4.8 2-3.4Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+            </svg>
+            <span>Настройка</span>
+          </span>
+        </button>
       </nav>
       <nav class="top-menu hidden" id="topMenu">
-        <button class="ghost menu-btn" id="menuStatus">Статус</button>
-        <button class="ghost menu-btn" id="menuControllers">Контроллеры</button>
-        <button class="ghost menu-btn" id="menuNetwork">Сеть</button>
+        <button class="ghost menu-btn" id="menuStatus">
+          <span class="menu-btn-content">
+            <svg class="menu-ico" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 18V9m7 9V6m7 12v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <span>Статус</span>
+          </span>
+        </button>
+        <button class="ghost menu-btn" id="menuControllers">
+          <span class="menu-btn-content">
+            <svg class="menu-ico" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="4" width="8" height="6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.7"/>
+              <rect x="13" y="4" width="8" height="6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.7"/>
+              <rect x="3" y="14" width="8" height="6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.7"/>
+              <rect x="13" y="14" width="8" height="6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.7"/>
+            </svg>
+            <span>Контроллеры</span>
+          </span>
+        </button>
+        <button class="ghost menu-btn" id="menuNetwork">
+          <span class="menu-btn-content">
+            <svg class="menu-ico" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 9a17 17 0 0 1 18 0M6 12.5a12 12 0 0 1 12 0M9.5 16a6.5 6.5 0 0 1 5 0" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+              <circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none"/>
+            </svg>
+            <span>Сеть</span>
+          </span>
+        </button>
       </nav>
       <div class="status" id="status"></div>
       <button class="ghost" id="logoutBtn">Выйти</button>
@@ -69,7 +118,7 @@
       <h2>Администрирование устройств</h2>
       <form id="deviceForm" class="admin-form">
         <label>
-          Device ID
+          ID устройства
           <input type="number" name="device_id" required />
         </label>
         <label>
@@ -81,7 +130,7 @@
           <select name="object_name" id="deviceObjectSelect"></select>
         </label>
         <label>
-          API key (опционально)
+          API-ключ (опционально)
           <input type="text" name="api_key" placeholder="оставь пустым для генерации" />
         </label>
         <button type="submit">Добавить устройство</button>
@@ -104,14 +153,6 @@
         <h1>Устройство</h1>
         <button class="ghost" id="backToDevices">Назад</button>
       </div>
-      <div class="sub" id="deviceTitle"></div>
-      <div class="interface-tools">
-        <label class="scope-label">
-          Источник
-          <select id="deviceScope"></select>
-        </label>
-        <button class="ghost" id="refreshDevice">Обновить</button>
-      </div>
       <div class="notice" id="deviceNotice"></div>
       <div class="interface-grid">
         <section class="interface-card">
@@ -128,7 +169,6 @@
         <h1>Контроллеры</h1>
         <button class="ghost" id="backToDevicesFromControllers">Назад</button>
       </div>
-      <div class="sub" id="deviceControllersTitle"></div>
       <div class="controllers-grid-page" id="deviceControllersGrid"></div>
     </section>
 
@@ -136,14 +176,6 @@
       <div class="row">
         <h1>Розетки</h1>
         <button class="ghost" id="backToControllersFromSockets">Назад</button>
-      </div>
-      <div class="sub" id="deviceSocketsTitle"></div>
-      <div class="interface-tools">
-        <label class="scope-label">
-          Источник
-          <select id="socketsScope"></select>
-        </label>
-        <button class="ghost" id="refreshSockets">Обновить</button>
       </div>
       <div class="notice" id="deviceSocketsNotice"></div>
       <div class="sockets-grid" id="deviceSocketsGrid"></div>
@@ -154,14 +186,6 @@
         <h1>Свет</h1>
         <button class="ghost" id="backToControllersFromLights">Назад</button>
       </div>
-      <div class="sub" id="deviceLightsTitle"></div>
-      <div class="interface-tools">
-        <label class="scope-label">
-          Источник
-          <select id="lightsScope"></select>
-        </label>
-        <button class="ghost" id="refreshLights">Обновить</button>
-      </div>
       <div class="notice" id="deviceLightsNotice"></div>
       <div class="lights-grid" id="deviceLightsGrid"></div>
     </section>
@@ -171,14 +195,6 @@
         <h1>Баки</h1>
         <button class="ghost" id="backToControllersFromTanks">Назад</button>
       </div>
-      <div class="sub" id="deviceTanksTitle"></div>
-      <div class="interface-tools">
-        <label class="scope-label">
-          Источник
-          <select id="tanksScope"></select>
-        </label>
-        <button class="ghost" id="refreshTanks">Обновить</button>
-      </div>
       <div class="notice" id="deviceTanksNotice"></div>
       <div class="tanks-grid" id="deviceTanksGrid"></div>
     </section>
@@ -187,14 +203,6 @@
       <div class="row">
         <h1>Сигнализация</h1>
         <button class="ghost" id="backToControllersFromSecurity">Назад</button>
-      </div>
-      <div class="sub" id="deviceSecurityTitle"></div>
-      <div class="interface-tools">
-        <label class="scope-label">
-          Источник
-          <select id="securityScope"></select>
-        </label>
-        <button class="ghost" id="refreshSecurity">Обновить</button>
       </div>
       <div class="notice" id="deviceSecurityNotice"></div>
       <div class="security-summary" id="deviceSecuritySummary"></div>
@@ -211,16 +219,65 @@
         <h1>Метео</h1>
         <button class="ghost" id="backToControllersFromMeteo">Назад</button>
       </div>
-      <div class="sub" id="deviceMeteoTitle"></div>
-      <div class="interface-tools">
-        <label class="scope-label">
-          Источник
-          <select id="meteoScope"></select>
-        </label>
-        <button class="ghost" id="refreshMeteo">Обновить</button>
-      </div>
       <div class="notice" id="deviceMeteoNotice"></div>
       <div class="meteo-grid" id="deviceMeteoGrid"></div>
+    </section>
+
+    <section id="deviceThermoView" class="card hidden">
+      <div class="row">
+        <h1>Термо</h1>
+        <button class="ghost" id="backToControllersFromThermo">Назад</button>
+      </div>
+      <div class="notice" id="deviceThermoNotice"></div>
+      <div class="thermo-grid" id="deviceThermoGrid"></div>
+    </section>
+
+    <section id="deviceSepticView" class="card hidden">
+      <div class="row">
+        <h1>Септик</h1>
+        <button class="ghost" id="backToControllersFromSeptic">Назад</button>
+      </div>
+      <div class="notice" id="deviceSepticNotice"></div>
+      <div class="septic-grid" id="deviceSepticGrid"></div>
+    </section>
+
+    <section id="deviceWateringView" class="card hidden">
+      <div class="row">
+        <h1>Полив</h1>
+        <button class="ghost" id="backToControllersFromWatering">Назад</button>
+      </div>
+      <div class="notice" id="deviceWateringNotice"></div>
+      <div class="watering-grid" id="deviceWateringGrid"></div>
+    </section>
+
+    <section id="deviceRingView" class="card hidden">
+      <div class="row">
+        <h1>Звонок</h1>
+        <button class="ghost" id="backToControllersFromRing">Назад</button>
+      </div>
+      <div class="notice" id="deviceRingNotice"></div>
+      <div class="ring-wrap" id="deviceRingWrap"></div>
+    </section>
+
+    <section id="deviceAvrView" class="card hidden">
+      <div class="row">
+        <h1>АВР</h1>
+        <button class="ghost" id="backToControllersFromAvr">Назад</button>
+      </div>
+      <div class="notice" id="deviceAvrNotice"></div>
+      <div class="avr-wrap" id="deviceAvrWrap"></div>
+    </section>
+
+    <section id="deviceLeakView" class="card hidden">
+      <div class="row">
+        <h1>Протечки</h1>
+        <button class="ghost" id="backToControllersFromLeak">Назад</button>
+      </div>
+      <div class="notice" id="deviceLeakNotice"></div>
+      <div class="socket-actions" id="deviceLeakActions">
+        <button class="ghost btn-sm" data-action="ack_all">Сбросить все</button>
+      </div>
+      <div class="leak-grid" id="deviceLeakGrid"></div>
     </section>
 
     <section id="deviceNetworkView" class="card hidden">
@@ -228,7 +285,6 @@
         <h1>Сеть</h1>
         <button class="ghost" id="backToDevicesFromNetwork">Назад</button>
       </div>
-      <div class="sub" id="deviceNetworkTitle"></div>
       <div class="network-grid">
         <section class="interface-card">
           <h2>Wi-Fi</h2>
@@ -244,6 +300,7 @@
         </section>
       </div>
     </section>
+
   </div>
 
   <script type="module" src="/js/main.js"></script>
