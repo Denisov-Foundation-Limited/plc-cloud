@@ -147,8 +147,34 @@ npm run dev
 ```
 
 По умолчанию сервер слушает:
-- `host`: `192.168.1.108` (сейчас захардкожен в `src/index.js`);
+- `host`: `0.0.0.0` или значение `HOST`;
 - `port`: `3000` или значение `PORT`.
+
+## Docker
+
+Сборка образа:
+
+```bash
+docker build -t plc-cloud .
+```
+
+Запуск контейнера:
+
+```bash
+docker run -d \
+  --name plc-cloud \
+  -p 3000:3000 \
+  -v "$(pwd)/data:/app/data" \
+  -e HOST=0.0.0.0 \
+  -e PORT=3000 \
+  plc-cloud
+```
+
+Запуск через Docker Compose:
+
+```bash
+docker compose up -d --build
+```
 
 ## Ключевые API-эндпоинты
 

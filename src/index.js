@@ -20,5 +20,6 @@ const container = new AppContainer({ rootDir: ROOT });
 const app = container.build();
 await app.init();
 
+const HOST = process.env.HOST || '0.0.0.0';
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '192.168.1.108');
+app.listen(PORT, HOST);
