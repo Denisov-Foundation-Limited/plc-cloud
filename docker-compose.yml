@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: plc-cloud
     ports:
-      - "${PORT:-3000}:3000"
+      - "${HOST_PORT:-3001}:3000"
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
