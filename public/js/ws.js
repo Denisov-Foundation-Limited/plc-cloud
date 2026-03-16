@@ -13,16 +13,22 @@ export class WebSocketClient {
     this.state = state;
     this.ui = ui;
     this.socket = null;
+    this.pending = [];
   }
 
   connect(handlers = {}) {
     if (this.socket && this.socket.readyState === WebSocket.OPEN) return;
+    if (this.socket && this.socket.readyState === WebSocket.CONNECTING) return;
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
     this.socket = new WebSocket(`${scheme}://${location.host}/ws/web`);
     this.state.ws = this.socket;
 
     this.socket.addEventListener('open', () => {
       this.ui.setStatus('Онлайн');
+      const queued = this.pending.splice(0, this.pending.length);
+      for (const payload of queued) {
+        this.socket.send(payload);
+      }
       if (handlers.onOpen) handlers.onOpen();
     });
 
@@ -38,8 +44,13 @@ export class WebSocketClient {
   }
 
   send(payload) {
+    const encoded = JSON.stringify(payload);
     if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify(payload));
+      this.socket.send(encoded);
+      return;
+    }
+    if (this.socket && this.socket.readyState === WebSocket.CONNECTING) {
+      this.pending.push(encoded);
     }
   }
 
@@ -47,5 +58,6 @@ export class WebSocketClient {
     if (this.socket) {
       this.socket.close();
     }
+    this.pending = [];
   }
 }

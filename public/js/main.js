@@ -22,6 +22,7 @@ const LIGHT_POLL_INTERVAL_MS = 700;
 const LIGHT_POLL_MAX_ATTEMPTS = 4;
 const LIGHT_POLL_MIN_SEND_GAP_MS = 550;
 const UI_PENDING_MS = 1400;
+let devicesRequestSeq = 0;
 let lastLightPollSentMs = 0;
 const TARGET_STORE_KEY = 'plc_cloud_target_by_device';
 const tilePendingTimers = new WeakMap();
@@ -972,14 +973,24 @@ function selectDevice(device) {
   ui.setLeakNotice('');
   renderTargetPicker(device);
   subscribeDevice(device.device_id);
-  sendGet(['system', 'controllers', 'stack'], 'local');
   requestDeviceSnapshot();
   startDevicePolling();
   ui.show('device');
 }
 
-function requestDevices(objectName) {
+async function requestDevices(objectName) {
+  const requestId = ++devicesRequestSeq;
   ws.send({ type: 'list_devices', object_name: objectName });
+  try {
+    const data = await api(`/api/devices?object=${encodeURIComponent(objectName)}`);
+    if (requestId !== devicesRequestSeq) return;
+    if (state.currentObject !== objectName) return;
+    state.devicesRaw = Array.isArray(data.devices) ? data.devices : [];
+    state.devices = expandDevicesWithVirtual(state.devicesRaw);
+    ui.renderDevices(selectDevice);
+  } catch (err) {
+    // keep WS-driven state if HTTP fallback fails
+  }
 }
 
 function subscribeDevice(deviceId) {
