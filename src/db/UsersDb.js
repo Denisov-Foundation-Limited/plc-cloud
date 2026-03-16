@@ -24,10 +24,19 @@ export class UsersDb {
     if (!existing) {
       data.users.push({
         username: 'admin',
-        password_hash: sha256('')
+        password_hash: sha256(''),
+        plc_username: ''
       });
-      await this.writeData(data);
     }
+    let dirty = false;
+    for (const row of data.users) {
+      if (typeof row.plc_username !== 'string') {
+        row.plc_username = '';
+        dirty = true;
+      }
+    }
+    if (!existing || dirty)
+      await this.writeData(data);
   }
 
   async findByUsername(username) {
@@ -40,6 +49,60 @@ export class UsersDb {
     if (!row) return false;
     const passHash = sha256(password || '');
     return passHash === row.password_hash;
+  }
+
+  async listUsers() {
+    const data = await this.readData();
+    return data.users.map(row => ({
+      username: row.username || '',
+      plc_username: row.plc_username || ''
+    }));
+  }
+
+  async createUser({ username, password, plc_username = '' }) {
+    const uname = String(username || '').trim();
+    if (!uname)
+      throw new Error('username_required');
+    const data = await this.readData();
+    if (data.users.some(row => row.username === uname))
+      throw new Error('user_exists');
+    data.users.push({
+      username: uname,
+      password_hash: sha256(password || ''),
+      plc_username: String(plc_username || '').trim()
+    });
+    await this.writeData(data);
+    return { username: uname, plc_username: String(plc_username || '').trim() };
+  }
+
+  async updateUser(username, patch = {}) {
+    const uname = String(username || '').trim();
+    if (!uname)
+      throw new Error('username_required');
+    const data = await this.readData();
+    const row = data.users.find(item => item.username === uname);
+    if (!row)
+      throw new Error('user_not_found');
+    if (Object.prototype.hasOwnProperty.call(patch, 'plc_username'))
+      row.plc_username = String(patch.plc_username || '').trim();
+    if (Object.prototype.hasOwnProperty.call(patch, 'password'))
+      row.password_hash = sha256(patch.password || '');
+    await this.writeData(data);
+    return { username: row.username || '', plc_username: row.plc_username || '' };
+  }
+
+  async deleteUser(username) {
+    const uname = String(username || '').trim();
+    if (!uname)
+      throw new Error('username_required');
+    if (uname === 'admin')
+      throw new Error('admin_delete_forbidden');
+    const data = await this.readData();
+    const nextUsers = data.users.filter(row => row.username !== uname);
+    if (nextUsers.length === data.users.length)
+      throw new Error('user_not_found');
+    data.users = nextUsers;
+    await this.writeData(data);
   }
 
   async readData() {

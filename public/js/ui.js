@@ -240,7 +240,9 @@ export class Ui {
     this.objectsList = document.getElementById('objectsList');
     this.adminDevices = document.getElementById('adminDevices');
     this.adminObjects = document.getElementById('adminObjects');
+    this.adminUsers = document.getElementById('adminUsers');
     this.objectForm = document.getElementById('objectForm');
+    this.userForm = document.getElementById('userForm');
     this.deviceForm = document.getElementById('deviceForm');
     this.deviceObjectSelect = document.getElementById('deviceObjectSelect');
 
@@ -1481,5 +1483,44 @@ export class Ui {
       this.adminObjects.appendChild(row);
     }
   }
-}
 
+  renderAdminUsers(users, onSave, onDelete) {
+    if (!this.adminUsers) return;
+    this.adminUsers.innerHTML = '';
+    if (!users.length) {
+      this.adminUsers.textContent = 'Нет пользователей';
+      return;
+    }
+    for (const user of users) {
+      const row = document.createElement('div');
+      row.className = 'admin-row';
+      row.innerHTML = `
+        <div class="admin-main">
+          <div><strong>${esc(user.username || '')}</strong></div>
+          <div class="muted">PLC username: ${esc(user.plc_username || '-')}</div>
+        </div>
+      `;
+      const actions = document.createElement('div');
+      actions.className = 'admin-actions';
+      const plcInput = document.createElement('input');
+      plcInput.type = 'text';
+      plcInput.className = 'admin-object-select';
+      plcInput.placeholder = 'PLC username';
+      plcInput.value = user.plc_username || '';
+      const save = document.createElement('button');
+      save.className = 'ghost';
+      save.textContent = 'Сохранить';
+      save.addEventListener('click', () => onSave(user, plcInput.value));
+      const del = document.createElement('button');
+      del.className = 'ghost danger';
+      del.textContent = 'Удалить';
+      del.disabled = user.username === 'admin';
+      del.addEventListener('click', () => onDelete(user));
+      actions.appendChild(plcInput);
+      actions.appendChild(save);
+      actions.appendChild(del);
+      row.appendChild(actions);
+      this.adminUsers.appendChild(row);
+    }
+  }
+}

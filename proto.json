@@ -119,7 +119,8 @@
     "controller_command": {
       "controller": "string",
       "action": "string",
-      "args": "object"
+      "args": "object",
+      "actor": "actor_info"
     },
     "command_result": {
       "ok": "bool",
@@ -130,6 +131,13 @@
       "code": "string",
       "message": "string",
       "details": "object"
+    },
+    "actor_info": {
+      "uid": "string",
+      "username": "string",
+      "plc_username": "string",
+      "source": "web|telegram|cloud_api",
+      "session_id": "string"
     },
     "stack_node": {
       "node_id": "u32",

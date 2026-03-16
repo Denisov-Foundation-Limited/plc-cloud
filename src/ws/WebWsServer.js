@@ -31,12 +31,15 @@ export class WebWsServer {
       const cookies = (req.headers.cookie || '').split(';').map(v => v.trim());
       const sessionCookie = cookies.find(c => c.startsWith('session='));
       const token = sessionCookie ? sessionCookie.split('=')[1] : null;
-      if (!token || !this.sessions.has(token)) {
+      const session = token ? this.sessions.get(token) : null;
+      if (!session) {
         logger.warn('web auth failed');
         ws.close();
         return;
       }
       logger.info('web connected');
+      ws.session = session;
+      ws.sessionToken = token;
       ws.subscriptions = new Set();
       this.clients.add(ws);
 
@@ -90,11 +93,19 @@ export class WebWsServer {
           return;
         }
         if (msg.type === 'send_cmd') {
+          const actor = {
+            uid: ws.session?.uid || ws.session?.username || '',
+            username: ws.session?.username || '',
+            plc_username: ws.session?.plc_username || '',
+            source: 'web',
+            session_id: ws.sessionToken || ''
+          };
           const result = this.deviceWs?.sendCmd(
             Number(msg.device_id),
             msg.controller,
             msg.action,
             msg.args || {},
+            actor,
             msg.unit || 'local',
             msg.node_id
           );

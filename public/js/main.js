@@ -302,12 +302,46 @@ async function loadAdminDevices() {
   );
 }
 
+async function loadAdminUsers() {
+  const data = await api('/api/admin/users');
+  ui.renderAdminUsers(
+    data.users || [],
+    async (user, plcUsername) => {
+      try {
+        await api(`/api/admin/users/${encodeURIComponent(user.username)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plc_username: String(plcUsername || '').trim() })
+        });
+        await loadAdminUsers();
+        ui.setStatus(`Пользователь "${user.username}" обновлен`);
+      } catch (err) {
+        ui.setStatus('Не удалось сохранить PLC username', false);
+      }
+    },
+    async (user) => {
+      try {
+        await api(`/api/admin/users/${encodeURIComponent(user.username)}`, { method: 'DELETE' });
+        await loadAdminUsers();
+        ui.setStatus(`Пользователь "${user.username}" удален`);
+      } catch (err) {
+        if (err?.message === 'admin_delete_forbidden') {
+          ui.setStatus('Нельзя удалить пользователя admin', false);
+          return;
+        }
+        ui.setStatus('Не удалось удалить пользователя', false);
+      }
+    }
+  );
+}
+
 async function checkAuth() {
   state.targetByDevice = loadTargets();
   ui.applyObjectTheme(state.currentObject || '');
   try {
     await refreshObjects();
     await loadAdminDevices();
+    await loadAdminUsers();
     ws.connect({
       onOpen: () => {
         if (state.currentObject) {
@@ -377,6 +411,7 @@ ui.menuSettingsBtn?.addEventListener('click', async () => {
   try {
     await refreshObjects();
     await loadAdminDevices();
+    await loadAdminUsers();
   } catch (err) {
     ui.setStatus('Не удалось обновить список устройств', false);
   }
@@ -568,6 +603,28 @@ ui.deviceForm.addEventListener('submit', async (e) => {
     await loadAdminDevices();
   } catch (err) {
     ui.setStatus('Ошибка добавления устройства', false);
+  }
+});
+
+ui.userForm?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const formData = new FormData(ui.userForm);
+  const payload = Object.fromEntries(formData.entries());
+  try {
+    await api('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    ui.userForm.reset();
+    await loadAdminUsers();
+    ui.setStatus(`Пользователь "${payload.username}" добавлен`);
+  } catch (err) {
+    if (err?.message === 'user_exists') {
+      ui.setStatus('Такой пользователь уже существует', false);
+      return;
+    }
+    ui.setStatus('Ошибка добавления пользователя', false);
   }
 });
 

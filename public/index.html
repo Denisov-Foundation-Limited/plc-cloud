@@ -115,6 +115,24 @@
       </form>
       <div id="adminObjects" class="admin-list"></div>
       <div class="divider"></div>
+      <h2>Пользователи</h2>
+      <form id="userForm" class="admin-form">
+        <label>
+          Логин
+          <input type="text" name="username" placeholder="operator" required />
+        </label>
+        <label>
+          Пароль
+          <input type="password" name="password" placeholder="пустой пароль допустим" />
+        </label>
+        <label>
+          PLC username
+          <input type="text" name="plc_username" placeholder="serg" />
+        </label>
+        <button type="submit">Добавить пользователя</button>
+      </form>
+      <div id="adminUsers" class="admin-list"></div>
+      <div class="divider"></div>
       <h2>Администрирование устройств</h2>
       <form id="deviceForm" class="admin-form">
         <label>

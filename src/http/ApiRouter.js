@@ -27,7 +27,8 @@ export class ApiRouter {
         res.status(401).json({ ok: false, error: 'invalid_credentials' });
         return;
       }
-      const token = this.sessions.create(username, this.nowMs);
+      const user = await this.usersDb.findByUsername(username);
+      const token = this.sessions.create(user || username, this.nowMs);
       res.cookie('session', token, { httpOnly: true, sameSite: 'lax' });
       res.json({ ok: true });
     });
@@ -74,6 +75,47 @@ export class ApiRouter {
     this.app.get('/api/admin/devices', this.requireAuth(), async (req, res) => {
       const devices = await this.registry.listAllWithStatus(this.devicesDb);
       res.json({ ok: true, devices });
+    });
+
+    this.app.get('/api/admin/users', this.requireAuth(), async (req, res) => {
+      const users = await this.usersDb.listUsers();
+      res.json({ ok: true, users });
+    });
+
+    this.app.post('/api/admin/users', this.requireAuth(), async (req, res) => {
+      const { username, password, plc_username } = req.body || {};
+      try {
+        const user = await this.usersDb.createUser({ username, password, plc_username });
+        res.json({ ok: true, user });
+      } catch (err) {
+        const error = err?.message || 'user_create_failed';
+        const status = error === 'username_required' || error === 'user_exists' ? 400 : 500;
+        res.status(status).json({ ok: false, error });
+      }
+    });
+
+    this.app.put('/api/admin/users/:username', this.requireAuth(), async (req, res) => {
+      const password = Object.prototype.hasOwnProperty.call(req.body || {}, 'password') ? req.body.password : undefined;
+      const plc_username = Object.prototype.hasOwnProperty.call(req.body || {}, 'plc_username') ? req.body.plc_username : undefined;
+      try {
+        const user = await this.usersDb.updateUser(req.params.username, { password, plc_username });
+        res.json({ ok: true, user });
+      } catch (err) {
+        const error = err?.message || 'user_update_failed';
+        const status = error === 'username_required' || error === 'user_not_found' ? 400 : 500;
+        res.status(status).json({ ok: false, error });
+      }
+    });
+
+    this.app.delete('/api/admin/users/:username', this.requireAuth(), async (req, res) => {
+      try {
+        await this.usersDb.deleteUser(req.params.username);
+        res.json({ ok: true });
+      } catch (err) {
+        const error = err?.message || 'user_delete_failed';
+        const status = error === 'username_required' || error === 'user_not_found' || error === 'admin_delete_forbidden' ? 400 : 500;
+        res.status(status).json({ ok: false, error });
+      }
     });
 
     this.app.post('/api/admin/objects', this.requireAuth(), async (req, res) => {

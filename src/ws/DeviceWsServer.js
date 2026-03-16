@@ -25,44 +25,17 @@ export class DeviceWsServer {
     this.pendingScopes = new Map();
   }
 
-  closeWithReason(ws, code, reason) {
-    ws.closeReason = reason || '';
-    ws.closeCode = code;
-    logger.warn(`closing device socket: code: ${code} reason: ${ws.closeReason || '-'}`);
-    try {
-      ws.close(code, reason);
-    } catch (err) {
-      logger.warn(`device close failed: ${err?.message || 'unknown_error'} reason: ${ws.closeReason || '-'}`);
-    }
-  }
-
-  sendErrorAndClose(ws, replyTo, code, message, closeReason = code) {
-    const frame = {
-      v: this.proto.version,
-      type: 'error',
-      id: crypto.randomUUID(),
-      reply_to: replyTo || undefined,
-      payload: { code, message }
-    };
-    if (ws.readyState !== 1) {
-      this.closeWithReason(ws, 1008, closeReason);
-      return;
-    }
-    try {
-      ws.send(JSON.stringify(frame), () => this.closeWithReason(ws, 1008, closeReason));
-    } catch (err) {
-      logger.warn(`device error send failed: ${err?.message || 'unknown_error'} code: ${code}`);
-      this.closeWithReason(ws, 1008, closeReason);
-    }
-  }
-
   init() {
     this.wss.on('connection', ws => {
       logger.info('device connected');
       ws.helloTimeout = setTimeout(() => {
         const deviceId = this.registry.getDeviceIdBySocket(ws);
         if (!deviceId) {
-          this.closeWithReason(ws, 1008, 'hello_timeout');
+          try {
+            ws.close();
+          } catch (err) {
+            // ignore socket close errors on hello timeout
+          }
         }
       }, 10_000);
 
@@ -99,11 +72,8 @@ export class DeviceWsServer {
         }
       });
 
-      ws.on('close', (code, reasonBuffer) => {
-        const reason = Buffer.isBuffer(reasonBuffer) ? reasonBuffer.toString() : String(reasonBuffer || '');
-        logger.info(
-          `device disconnected: code: ${code || 0} reason: ${reason || '-'} server_reason: ${ws.closeReason || '-'}`
-        );
+      ws.on('close', () => {
+        logger.info('device disconnected');
         if (ws.helloTimeout) {
           clearTimeout(ws.helloTimeout);
           ws.helloTimeout = null;
@@ -134,13 +104,27 @@ export class DeviceWsServer {
     const apiKey = message.auth?.api_key;
     if (!apiKey) {
       logger.warn('device auth missing api_key');
-      this.sendErrorAndClose(ws, message.id, 'auth_missing', 'api_key required');
+      this.send(ws, {
+        v: this.proto.version,
+        type: 'error',
+        id: crypto.randomUUID(),
+        reply_to: message.id,
+        payload: { code: 'auth_missing', message: 'api_key required' }
+      });
+      ws.close();
       return;
     }
     const deviceRow = await this.devicesDb.getByApiKey(apiKey);
     if (!deviceRow) {
       logger.warn('device auth invalid api_key');
-      this.sendErrorAndClose(ws, message.id, 'auth_invalid', 'api_key invalid');
+      this.send(ws, {
+        v: this.proto.version,
+        type: 'error',
+        id: crypto.randomUUID(),
+        reply_to: message.id,
+        payload: { code: 'auth_invalid', message: 'api_key invalid' }
+      });
+      ws.close();
       return;
     }
 
@@ -204,13 +188,27 @@ export class DeviceWsServer {
 
     const deviceId = this.registry.getDeviceIdBySocket(ws);
     if (!deviceId) {
-      this.sendErrorAndClose(ws, message.id, 'session_missing', 'hello required');
+      this.send(ws, {
+        v: this.proto.version,
+        type: 'error',
+        id: crypto.randomUUID(),
+        reply_to: message.id,
+        payload: { code: 'session_missing', message: 'hello required' }
+      });
+      ws.close();
       return;
     }
 
     const session = this.registry.getSession(deviceId);
     if (!message.session_id || message.session_id !== session?.sessionId) {
-      this.sendErrorAndClose(ws, message.id, 'session_invalid', 'session_id invalid');
+      this.send(ws, {
+        v: this.proto.version,
+        type: 'error',
+        id: crypto.randomUUID(),
+        reply_to: message.id,
+        payload: { code: 'session_invalid', message: 'session_id invalid' }
+      });
+      ws.close();
       return;
     }
 
@@ -306,7 +304,7 @@ export class DeviceWsServer {
     return { ok: true, id };
   }
 
-  sendCmd(deviceId, controller, action, args = {}, unit = 'local', nodeId) {
+  sendCmd(deviceId, controller, action, args = {}, actor = null, unit = 'local', nodeId) {
     const session = this.registry.getSession(deviceId);
     if (!session) return { ok: false, error: 'device_offline' };
     const id = crypto.randomUUID();
@@ -319,7 +317,8 @@ export class DeviceWsServer {
       payload: {
         controller,
         action,
-        args
+        args,
+        actor: actor || undefined
       }
     };
     if (unit === 'stack' && nodeId) {

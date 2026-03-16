@@ -15,9 +15,15 @@ export class SessionStore {
     this.sessions = new Map();
   }
 
-  create(username, nowMs) {
+  create(user, nowMs) {
+    const username = typeof user === 'string' ? user : (user?.username || '');
     const token = crypto.randomUUID();
-    this.sessions.set(token, { username, createdAt: nowMs() });
+    this.sessions.set(token, {
+      uid: username,
+      username,
+      plc_username: typeof user === 'string' ? '' : (user?.plc_username || ''),
+      createdAt: nowMs()
+    });
     return token;
   }
 
