@@ -1,18 +1,20 @@
 version: "3.9"
 
 services:
-  plc-cloud:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: plc-cloud
-    ports:
-      - "${HOST_PORT:-3001}:3001"
-    environment:
-      NODE_ENV: production
-      HOST: 0.0.0.0
-      PORT: 3001
-      PLC_CLOUD_SEED_SAMPLE: "${PLC_CLOUD_SEED_SAMPLE:-0}"
-    volumes:
-      - ./data:/app/data
-    restart: unless-stopped
+    plc-cloud:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: plc-cloud
+        ports:
+            - "${WEB_HOST_PORT:-80}:80"
+            - "${DEVICE_HOST_PORT:-3001}:3001"
+        environment:
+            NODE_ENV: production
+            HOST: 0.0.0.0
+            WEB_PORT: 80
+            PORT: 3001
+            PLC_CLOUD_SEED_SAMPLE: "${PLC_CLOUD_SEED_SAMPLE:-0}"
+        volumes:
+            - ./data:/app/data
+        restart: unless-stopped

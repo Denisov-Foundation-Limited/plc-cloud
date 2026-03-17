@@ -1,326 +1,803 @@
 <!doctype html>
 <html lang="ru">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PLC Cloud</title>
-  <link rel="stylesheet" href="/styles.css" />
-</head>
-<body>
-  <div class="app">
-    <header class="top">
-      <div class="brand">PLC Cloud</div>
-      <nav class="main-menu hidden" id="mainMenu">
-        <button class="ghost menu-btn" id="menuObjects">
-          <span class="menu-btn-content">
-            <svg class="menu-ico" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3 10.5 12 4l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <span>Объекты</span>
-          </span>
-        </button>
-        <button class="ghost menu-btn" id="menuDevices">
-          <span class="menu-btn-content">
-            <svg class="menu-ico" viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="4" y="5" width="16" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
-              <rect x="9" y="9" width="6" height="6" rx="1" fill="currentColor" stroke="none"/>
-            </svg>
-            <span>Устройства</span>
-          </span>
-        </button>
-        <button class="ghost menu-btn" id="menuSettings">
-          <span class="menu-btn-content">
-            <svg class="menu-ico" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z" fill="none" stroke="currentColor" stroke-width="1.8"/>
-              <path d="M19.4 15a7.8 7.8 0 0 0 .1-2l2-1.5-2-3.4-2.4.8a7.7 7.7 0 0 0-1.7-1L15 5h-6l-.4 2.9a7.7 7.7 0 0 0-1.7 1l-2.4-.8-2 3.4 2 1.5a7.8 7.8 0 0 0 .1 2l-2 1.5 2 3.4 2.4-.8a7.7 7.7 0 0 0 1.7 1L9 23h6l.4-2.9a7.7 7.7 0 0 0 1.7-1l2.4.8 2-3.4Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-            </svg>
-            <span>Настройка</span>
-          </span>
-        </button>
-      </nav>
-      <nav class="top-menu hidden" id="topMenu">
-        <button class="ghost menu-btn" id="menuStatus">
-          <span class="menu-btn-content">
-            <svg class="menu-ico" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M5 18V9m7 9V6m7 12v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            <span>Статус</span>
-          </span>
-        </button>
-        <button class="ghost menu-btn" id="menuControllers">
-          <span class="menu-btn-content">
-            <svg class="menu-ico" viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="3" y="4" width="8" height="6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.7"/>
-              <rect x="13" y="4" width="8" height="6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.7"/>
-              <rect x="3" y="14" width="8" height="6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.7"/>
-              <rect x="13" y="14" width="8" height="6" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.7"/>
-            </svg>
-            <span>Контроллеры</span>
-          </span>
-        </button>
-        <button class="ghost menu-btn" id="menuNetwork">
-          <span class="menu-btn-content">
-            <svg class="menu-ico" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3 9a17 17 0 0 1 18 0M6 12.5a12 12 0 0 1 12 0M9.5 16a6.5 6.5 0 0 1 5 0" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
-              <circle cx="12" cy="19" r="1.5" fill="currentColor" stroke="none"/>
-            </svg>
-            <span>Сеть</span>
-          </span>
-        </button>
-      </nav>
-      <div class="status" id="status"></div>
-      <button class="ghost" id="logoutBtn">Выйти</button>
-    </header>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>PLC Cloud</title>
+        <link rel="stylesheet" href="/styles.css" />
+    </head>
+    <body>
+        <div class="app">
+            <header class="top">
+                <div class="brand">PLC Cloud</div>
+                <nav class="main-menu hidden" id="mainMenu">
+                    <button class="ghost menu-btn" id="menuObjects">
+                        <span class="menu-btn-content">
+                            <svg
+                                class="menu-ico"
+                                viewBox="0 0 24 24"
+                                aria-hidden="true"
+                            >
+                                <path
+                                    d="M3 10.5 12 4l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                            <span>Объекты</span>
+                        </span>
+                    </button>
+                    <button class="ghost menu-btn" id="menuDevices">
+                        <span class="menu-btn-content">
+                            <svg
+                                class="menu-ico"
+                                viewBox="0 0 24 24"
+                                aria-hidden="true"
+                            >
+                                <rect
+                                    x="4"
+                                    y="5"
+                                    width="16"
+                                    height="14"
+                                    rx="2.5"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                />
+                                <rect
+                                    x="9"
+                                    y="9"
+                                    width="6"
+                                    height="6"
+                                    rx="1"
+                                    fill="currentColor"
+                                    stroke="none"
+                                />
+                            </svg>
+                            <span>Устройства</span>
+                        </span>
+                    </button>
+                    <button class="ghost menu-btn" id="menuSettings">
+                        <span class="menu-btn-content">
+                            <svg
+                                class="menu-ico"
+                                viewBox="0 0 24 24"
+                                aria-hidden="true"
+                            >
+                                <path
+                                    d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.8"
+                                />
+                                <path
+                                    d="M19.4 15a7.8 7.8 0 0 0 .1-2l2-1.5-2-3.4-2.4.8a7.7 7.7 0 0 0-1.7-1L15 5h-6l-.4 2.9a7.7 7.7 0 0 0-1.7 1l-2.4-.8-2 3.4 2 1.5a7.8 7.8 0 0 0 .1 2l-2 1.5 2 3.4 2.4-.8a7.7 7.7 0 0 0 1.7 1L9 23h6l.4-2.9a7.7 7.7 0 0 0 1.7-1l2.4.8 2-3.4Z"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.4"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                            <span>Настройки</span>
+                        </span>
+                    </button>
+                </nav>
+                <nav class="top-menu hidden" id="topMenu">
+                    <button class="ghost menu-btn" id="menuStatus">
+                        <span class="menu-btn-content">
+                            <svg
+                                class="menu-ico"
+                                viewBox="0 0 24 24"
+                                aria-hidden="true"
+                            >
+                                <path
+                                    d="M5 18V9m7 9V6m7 12v-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="2"
+                                    stroke-linecap="round"
+                                />
+                            </svg>
+                            <span>Статус</span>
+                        </span>
+                    </button>
+                    <button class="ghost menu-btn" id="menuControllers">
+                        <span class="menu-btn-content">
+                            <svg
+                                class="menu-ico"
+                                viewBox="0 0 24 24"
+                                aria-hidden="true"
+                            >
+                                <rect
+                                    x="3"
+                                    y="4"
+                                    width="8"
+                                    height="6"
+                                    rx="1.4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.7"
+                                />
+                                <rect
+                                    x="13"
+                                    y="4"
+                                    width="8"
+                                    height="6"
+                                    rx="1.4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.7"
+                                />
+                                <rect
+                                    x="3"
+                                    y="14"
+                                    width="8"
+                                    height="6"
+                                    rx="1.4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.7"
+                                />
+                                <rect
+                                    x="13"
+                                    y="14"
+                                    width="8"
+                                    height="6"
+                                    rx="1.4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.7"
+                                />
+                            </svg>
+                            <span>Контроллеры</span>
+                        </span>
+                    </button>
+                    <button class="ghost menu-btn" id="menuNetwork">
+                        <span class="menu-btn-content">
+                            <svg
+                                class="menu-ico"
+                                viewBox="0 0 24 24"
+                                aria-hidden="true"
+                            >
+                                <path
+                                    d="M3 9a17 17 0 0 1 18 0M6 12.5a12 12 0 0 1 12 0M9.5 16a6.5 6.5 0 0 1 5 0"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.9"
+                                    stroke-linecap="round"
+                                />
+                                <circle
+                                    cx="12"
+                                    cy="19"
+                                    r="1.5"
+                                    fill="currentColor"
+                                    stroke="none"
+                                />
+                            </svg>
+                            <span>Сеть</span>
+                        </span>
+                    </button>
+                </nav>
+                <div class="status" id="status"></div>
+                <button class="ghost" id="logoutBtn">Выйти</button>
+            </header>
 
-    <section id="loginView" class="card">
-      <h1>Вход</h1>
-      <form id="loginForm">
-        <label>
-          Логин
-          <input type="text" name="username" value="admin" required />
-        </label>
-        <label>
-          Пароль
-          <input type="password" name="password" value="" />
-        </label>
-        <button type="submit">Войти</button>
-        <div class="hint">По умолчанию: admin / пустой пароль</div>
-      </form>
-    </section>
+            <section id="loginView" class="card">
+                <h1>Вход</h1>
+                <form id="loginForm">
+                    <label>
+                        Логин
+                        <input
+                            type="text"
+                            name="username"
+                            value="admin"
+                            required
+                        />
+                    </label>
+                    <label>
+                        Пароль
+                        <input type="password" name="password" value="" />
+                    </label>
+                    <button type="submit">Войти</button>
+                    <div class="hint">По умолчанию: admin / пустой пароль</div>
+                </form>
+            </section>
 
-    <section id="objectsView" class="card hidden">
-      <h1>Выбор объекта</h1>
-      <div id="objectsList" class="object-tiles"></div>
-    </section>
+            <section id="objectsView" class="card hidden">
+                <h1>Выбор объекта</h1>
+                <div id="objectsList" class="object-tiles"></div>
+            </section>
 
-    <section id="settingsView" class="card hidden">
-      <h1>Настройка</h1>
-      <h2>Редактор объектов</h2>
-      <form id="objectForm" class="object-admin-form">
-        <label>
-          Название объекта
-          <input type="text" name="name" placeholder="Новый объект" required />
-        </label>
-        <label>
-          Иконка
-          <select name="icon">
-            <option value="apartment">Квартира</option>
-            <option value="house" selected>Частный дом</option>
-            <option value="dacha">Дача</option>
-            <option value="garage">Гараж</option>
-            <option value="garden">Сад</option>
-          </select>
-        </label>
-        <button type="submit">Добавить объект</button>
-      </form>
-      <div id="adminObjects" class="admin-list"></div>
-      <div class="divider"></div>
-      <h2>Пользователи</h2>
-      <form id="userForm" class="admin-form">
-        <label>
-          Логин
-          <input type="text" name="username" placeholder="operator" required />
-        </label>
-        <label>
-          Пароль
-          <input type="password" name="password" placeholder="пустой пароль допустим" />
-        </label>
-        <label>
-          PLC username
-          <input type="text" name="plc_username" placeholder="serg" />
-        </label>
-        <button type="submit">Добавить пользователя</button>
-      </form>
-      <div id="adminUsers" class="admin-list"></div>
-      <div class="divider"></div>
-      <h2>Администрирование устройств</h2>
-      <form id="deviceForm" class="admin-form">
-        <label>
-          ID устройства
-          <input type="number" name="device_id" required />
-        </label>
-        <label>
-          Имя
-          <input type="text" name="name" placeholder="PLC-ESP" />
-        </label>
-        <label>
-          Объект
-          <select name="object_name" id="deviceObjectSelect"></select>
-        </label>
-        <label>
-          API-ключ (опционально)
-          <input type="text" name="api_key" placeholder="оставь пустым для генерации" />
-        </label>
-        <button type="submit">Добавить устройство</button>
-      </form>
-      <div id="adminDevices" class="admin-list"></div>
-    </section>
+            <section id="settingsView" class="card hidden">
+                <div id="settingsHomePanel" class="settings-panel">
+                    <h1>Настройки</h1>
+                    <div class="sub">Выбери раздел администрирования</div>
+                    <div class="settings-tiles" id="settingsTiles">
+                        <button
+                            class="settings-tile"
+                            id="settingsObjectsTile"
+                            type="button"
+                        >
+                            <div class="settings-tile-art" aria-hidden="true">
+                                <svg viewBox="0 0 96 96">
+                                    <path
+                                        d="M18 40 48 18l30 22v34H18z"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="5"
+                                        stroke-linejoin="round"
+                                    />
+                                    <path
+                                        d="M33 74V51h30v23"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="5"
+                                        stroke-linejoin="round"
+                                    />
+                                    <path
+                                        d="M28 50h14M54 37h14M54 50h14"
+                                        stroke="currentColor"
+                                        stroke-width="5"
+                                        stroke-linecap="round"
+                                    />
+                                </svg>
+                            </div>
+                            <span class="settings-tile-title">Объекты</span>
+                            <span class="settings-tile-text"
+                                >Редактирование списка объектов и иконок</span
+                            >
+                        </button>
+                        <button
+                            class="settings-tile"
+                            id="settingsDevicesTile"
+                            type="button"
+                        >
+                            <div class="settings-tile-art" aria-hidden="true">
+                                <svg viewBox="0 0 96 96">
+                                    <rect
+                                        x="18"
+                                        y="22"
+                                        width="60"
+                                        height="52"
+                                        rx="8"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="5"
+                                    />
+                                    <rect
+                                        x="39"
+                                        y="39"
+                                        width="18"
+                                        height="18"
+                                        rx="3"
+                                        fill="currentColor"
+                                    />
+                                    <path
+                                        d="M18 34H10M18 48H10M18 62H10M86 34H78M86 48H78M86 62H78"
+                                        stroke="currentColor"
+                                        stroke-width="5"
+                                        stroke-linecap="round"
+                                    />
+                                    <circle
+                                        cx="30"
+                                        cy="34"
+                                        r="3"
+                                        fill="currentColor"
+                                    />
+                                    <circle
+                                        cx="66"
+                                        cy="34"
+                                        r="3"
+                                        fill="currentColor"
+                                    />
+                                </svg>
+                            </div>
+                            <span class="settings-tile-title">Устройства</span>
+                            <span class="settings-tile-text"
+                                >Управление устройствами, ключами и привязкой к
+                                объектам</span
+                            >
+                        </button>
+                        <button
+                            class="settings-tile"
+                            id="settingsUsersTile"
+                            type="button"
+                        >
+                            <div class="settings-tile-art" aria-hidden="true">
+                                <svg viewBox="0 0 96 96">
+                                    <circle
+                                        cx="48"
+                                        cy="34"
+                                        r="14"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="5"
+                                    />
+                                    <path
+                                        d="M24 76c4-14 16-22 24-22s20 8 24 22"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="5"
+                                        stroke-linecap="round"
+                                    />
+                                    <path
+                                        d="M72 28h12M78 22v12"
+                                        stroke="currentColor"
+                                        stroke-width="5"
+                                        stroke-linecap="round"
+                                    />
+                                </svg>
+                            </div>
+                            <span class="settings-tile-title"
+                                >Пользователи</span
+                            >
+                            <span class="settings-tile-text"
+                                >Добавление пользователей и настройка PLC
+                                username</span
+                            >
+                        </button>
+                        <button
+                            class="settings-tile"
+                            id="settingsTelegramTile"
+                            type="button"
+                        >
+                            <div class="settings-tile-art" aria-hidden="true">
+                                <svg viewBox="0 0 96 96">
+                                    <path
+                                        d="M79 20 18 44l17 7 8 23 14-16 15 11 7-49Z"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="5"
+                                        stroke-linejoin="round"
+                                    />
+                                    <path
+                                        d="M35 50 72 27"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="5"
+                                        stroke-linecap="round"
+                                    />
+                                </svg>
+                            </div>
+                            <span class="settings-tile-title">Телеграм</span>
+                            <span class="settings-tile-text"
+                                >Webhook, токен, команды и параметры
+                                Telegram-бота</span
+                            >
+                        </button>
+                    </div>
+                </div>
 
-    <section id="devicesView" class="card hidden">
-      <div class="row">
-        <h1>Устройства онлайн</h1>
-        <button class="ghost" id="backToObjects">Назад</button>
-      </div>
-      <div class="sub" id="devicesObject"></div>
-      <div id="devicesList" class="list"></div>
-      <div class="empty" id="devicesEmpty">Нет устройств онлайн</div>
-    </section>
+                <div id="settingsObjectsPanel" class="settings-panel hidden">
+                    <div class="row">
+                        <div>
+                            <h1>Объекты</h1>
+                            <div class="sub">
+                                Редактор объектов и визуальных иконок
+                            </div>
+                        </div>
+                        <button
+                            class="ghost"
+                            id="settingsBackFromObjects"
+                            type="button"
+                        >
+                            Назад
+                        </button>
+                    </div>
+                    <form id="objectForm" class="object-admin-form">
+                        <label>
+                            Название объекта
+                            <input
+                                type="text"
+                                name="name"
+                                placeholder="Новый объект"
+                                required
+                            />
+                        </label>
+                        <label>
+                            Иконка
+                            <select name="icon">
+                                <option value="apartment">Квартира</option>
+                                <option value="house" selected>
+                                    Частный дом
+                                </option>
+                                <option value="dacha">Дача</option>
+                                <option value="garage">Гараж</option>
+                                <option value="garden">Сад</option>
+                            </select>
+                        </label>
+                        <button type="submit">Добавить объект</button>
+                    </form>
+                    <div id="adminObjects" class="admin-list"></div>
+                </div>
 
-    <section id="deviceView" class="card hidden">
-      <div class="row">
-        <h1>Устройство</h1>
-        <button class="ghost" id="backToDevices">Назад</button>
-      </div>
-      <div class="notice" id="deviceNotice"></div>
-      <div class="interface-grid">
-        <section class="interface-card">
-          <h2>Статус</h2>
-          <table class="status-table">
-            <tbody id="deviceStatusBody"></tbody>
-          </table>
-        </section>
-      </div>
-    </section>
+                <div id="settingsDevicesPanel" class="settings-panel hidden">
+                    <div class="row">
+                        <div>
+                            <h1>Устройства</h1>
+                            <div class="sub">
+                                Администрирование устройств и API-ключей
+                            </div>
+                        </div>
+                        <button
+                            class="ghost"
+                            id="settingsBackFromDevices"
+                            type="button"
+                        >
+                            Назад
+                        </button>
+                    </div>
+                    <form id="deviceForm" class="admin-form">
+                        <label>
+                            ID устройства
+                            <input type="number" name="device_id" required />
+                        </label>
+                        <label>
+                            Имя
+                            <input
+                                type="text"
+                                name="name"
+                                placeholder="PLC-ESP"
+                            />
+                        </label>
+                        <label>
+                            Объект
+                            <select
+                                name="object_name"
+                                id="deviceObjectSelect"
+                            ></select>
+                        </label>
+                        <label>
+                            API-ключ (опционально)
+                            <input
+                                type="text"
+                                name="api_key"
+                                placeholder="оставь пустым для генерации"
+                            />
+                        </label>
+                        <button type="submit">Добавить устройство</button>
+                    </form>
+                    <div id="adminDevices" class="admin-list"></div>
+                </div>
 
-    <section id="deviceControllersView" class="card hidden">
-      <div class="row">
-        <h1>Контроллеры</h1>
-        <button class="ghost" id="backToDevicesFromControllers">Назад</button>
-      </div>
-      <div class="controllers-grid-page" id="deviceControllersGrid"></div>
-    </section>
+                <div id="settingsUsersPanel" class="settings-panel hidden">
+                    <div class="row">
+                        <div>
+                            <h1>Пользователи</h1>
+                            <div class="sub">
+                                Управление доступом и PLC username
+                            </div>
+                        </div>
+                        <button
+                            class="ghost"
+                            id="settingsBackFromUsers"
+                            type="button"
+                        >
+                            Назад
+                        </button>
+                    </div>
+                    <form id="userForm" class="admin-form">
+                        <label>
+                            Логин
+                            <input
+                                type="text"
+                                name="username"
+                                placeholder="operator"
+                                required
+                            />
+                        </label>
+                        <label>
+                            Пароль
+                            <input
+                                type="password"
+                                name="password"
+                                placeholder="пустой пароль допустим"
+                            />
+                        </label>
+                        <label>
+                            PLC username
+                            <input
+                                type="text"
+                                name="plc_username"
+                                placeholder="serg"
+                            />
+                        </label>
+                        <label>
+                            Telegram username
+                            <input
+                                type="text"
+                                name="telegram_username"
+                                placeholder="username или @username"
+                            />
+                        </label>
+                        <label>
+                            Chat ID
+                            <input
+                                type="text"
+                                name="chat_id"
+                                placeholder="123456789"
+                            />
+                        </label>
+                        <button type="submit">Добавить пользователя</button>
+                    </form>
+                    <div id="adminUsers" class="admin-list"></div>
+                </div>
 
-    <section id="deviceSocketsView" class="card hidden">
-      <div class="row">
-        <h1>Розетки</h1>
-        <button class="ghost" id="backToControllersFromSockets">Назад</button>
-      </div>
-      <div class="notice" id="deviceSocketsNotice"></div>
-      <div class="sockets-grid" id="deviceSocketsGrid"></div>
-    </section>
+                <div id="settingsTelegramPanel" class="settings-panel hidden">
+                    <div class="row">
+                        <div>
+                            <h1>Телеграм</h1>
+                            <div class="sub">
+                                Long polling без webhook, публичного URL и
+                                лишней внешней обвязки
+                            </div>
+                        </div>
+                        <button
+                            class="ghost"
+                            id="settingsBackFromTelegram"
+                            type="button"
+                        >
+                            Назад
+                        </button>
+                    </div>
+                    <div class="telegram-layout">
+                        <section class="telegram-hero">
+                            <div class="telegram-hero-badge">Telegram Bot</div>
+                            <h2>Режим Long Polling</h2>
+                            <p>
+                                Сервер сам получает сообщения от Telegram по bot
+                                token. Публичный URL, webhook path и secret
+                                token больше не нужны.
+                            </p>
+                            <div class="telegram-hero-points">
+                                <div class="telegram-hero-point">
+                                    Простой запуск
+                                </div>
+                                <div class="telegram-hero-point">
+                                    Без HTTPS для webhook
+                                </div>
+                                <div class="telegram-hero-point">
+                                    Подходит для локального сервера
+                                </div>
+                            </div>
+                        </section>
 
-    <section id="deviceLightsView" class="card hidden">
-      <div class="row">
-        <h1>Свет</h1>
-        <button class="ghost" id="backToControllersFromLights">Назад</button>
-      </div>
-      <div class="notice" id="deviceLightsNotice"></div>
-      <div class="lights-grid" id="deviceLightsGrid"></div>
-    </section>
+                        <section class="telegram-settings-card">
+                            <form
+                                id="telegramSettingsForm"
+                                class="telegram-settings-form"
+                            >
+                                <label class="telegram-token-field">
+                                    <span>Token бота</span>
+                                    <input
+                                        type="text"
+                                        name="token"
+                                        placeholder="123456:ABC..."
+                                        autocomplete="off"
+                                    />
+                                    <small
+                                        >Укажи bot token, полученный у
+                                        BotFather. Этого достаточно для
+                                        polling-режима.</small
+                                    >
+                                </label>
+                                <button type="submit">
+                                    Сохранить настройки
+                                </button>
+                            </form>
+                        </section>
+                    </div>
+                    <div
+                        id="telegramSettingsInfo"
+                        class="settings-telegram-grid"
+                    ></div>
+                </div>
+            </section>
 
-    <section id="deviceTanksView" class="card hidden">
-      <div class="row">
-        <h1>Баки</h1>
-        <button class="ghost" id="backToControllersFromTanks">Назад</button>
-      </div>
-      <div class="notice" id="deviceTanksNotice"></div>
-      <div class="tanks-grid" id="deviceTanksGrid"></div>
-    </section>
+            <section id="devicesView" class="card hidden">
+                <div class="row">
+                    <h1>Устройства онлайн</h1>
+                    <button class="ghost" id="backToObjects">Назад</button>
+                </div>
+                <div class="sub" id="devicesObject"></div>
+                <div id="devicesList" class="list"></div>
+                <div class="empty" id="devicesEmpty">Нет устройств онлайн</div>
+            </section>
 
-    <section id="deviceSecurityView" class="card hidden">
-      <div class="row">
-        <h1>Сигнализация</h1>
-        <button class="ghost" id="backToControllersFromSecurity">Назад</button>
-      </div>
-      <div class="notice" id="deviceSecurityNotice"></div>
-      <div class="security-summary" id="deviceSecuritySummary"></div>
-      <div class="socket-actions" id="deviceSecurityActions">
-        <button class="ghost btn-sm" data-action="arm">Поставить</button>
-        <button class="ghost btn-sm" data-action="disarm">Снять</button>
-        <button class="ghost btn-sm" data-action="clear">Сброс тревоги</button>
-      </div>
-      <div class="security-grid" id="deviceSecurityGrid"></div>
-    </section>
+            <section id="deviceView" class="card hidden">
+                <div class="row">
+                    <h1>Устройство</h1>
+                    <button class="ghost" id="backToDevices">Назад</button>
+                </div>
+                <div class="notice" id="deviceNotice"></div>
+                <div class="interface-grid">
+                    <section class="interface-card">
+                        <h2>Статус</h2>
+                        <table class="status-table">
+                            <tbody id="deviceStatusBody"></tbody>
+                        </table>
+                    </section>
+                </div>
+            </section>
 
-    <section id="deviceMeteoView" class="card hidden">
-      <div class="row">
-        <h1>Метео</h1>
-        <button class="ghost" id="backToControllersFromMeteo">Назад</button>
-      </div>
-      <div class="notice" id="deviceMeteoNotice"></div>
-      <div class="meteo-grid" id="deviceMeteoGrid"></div>
-    </section>
+            <section id="deviceControllersView" class="card hidden">
+                <div class="row">
+                    <h1>Контроллеры</h1>
+                    <button class="ghost" id="backToDevicesFromControllers">
+                        Назад
+                    </button>
+                </div>
+                <div
+                    class="controllers-grid-page"
+                    id="deviceControllersGrid"
+                ></div>
+            </section>
 
-    <section id="deviceThermoView" class="card hidden">
-      <div class="row">
-        <h1>Термо</h1>
-        <button class="ghost" id="backToControllersFromThermo">Назад</button>
-      </div>
-      <div class="notice" id="deviceThermoNotice"></div>
-      <div class="thermo-grid" id="deviceThermoGrid"></div>
-    </section>
+            <section id="deviceSocketsView" class="card hidden">
+                <div class="row">
+                    <h1>Розетки</h1>
+                    <button class="ghost" id="backToControllersFromSockets">
+                        Назад
+                    </button>
+                </div>
+                <div class="notice" id="deviceSocketsNotice"></div>
+                <div class="sockets-grid" id="deviceSocketsGrid"></div>
+            </section>
 
-    <section id="deviceSepticView" class="card hidden">
-      <div class="row">
-        <h1>Септик</h1>
-        <button class="ghost" id="backToControllersFromSeptic">Назад</button>
-      </div>
-      <div class="notice" id="deviceSepticNotice"></div>
-      <div class="septic-grid" id="deviceSepticGrid"></div>
-    </section>
+            <section id="deviceLightsView" class="card hidden">
+                <div class="row">
+                    <h1>Свет</h1>
+                    <button class="ghost" id="backToControllersFromLights">
+                        Назад
+                    </button>
+                </div>
+                <div class="notice" id="deviceLightsNotice"></div>
+                <div class="lights-grid" id="deviceLightsGrid"></div>
+            </section>
 
-    <section id="deviceWateringView" class="card hidden">
-      <div class="row">
-        <h1>Полив</h1>
-        <button class="ghost" id="backToControllersFromWatering">Назад</button>
-      </div>
-      <div class="notice" id="deviceWateringNotice"></div>
-      <div class="watering-grid" id="deviceWateringGrid"></div>
-    </section>
+            <section id="deviceTanksView" class="card hidden">
+                <div class="row">
+                    <h1>Баки</h1>
+                    <button class="ghost" id="backToControllersFromTanks">
+                        Назад
+                    </button>
+                </div>
+                <div class="notice" id="deviceTanksNotice"></div>
+                <div class="tanks-grid" id="deviceTanksGrid"></div>
+            </section>
 
-    <section id="deviceRingView" class="card hidden">
-      <div class="row">
-        <h1>Звонок</h1>
-        <button class="ghost" id="backToControllersFromRing">Назад</button>
-      </div>
-      <div class="notice" id="deviceRingNotice"></div>
-      <div class="ring-wrap" id="deviceRingWrap"></div>
-    </section>
+            <section id="deviceSecurityView" class="card hidden">
+                <div class="row">
+                    <h1>Сигнализация</h1>
+                    <button class="ghost" id="backToControllersFromSecurity">
+                        Назад
+                    </button>
+                </div>
+                <div class="notice" id="deviceSecurityNotice"></div>
+                <div class="security-summary" id="deviceSecuritySummary"></div>
+                <div class="socket-actions" id="deviceSecurityActions">
+                    <button class="ghost btn-sm" data-action="arm">
+                        Поставить
+                    </button>
+                    <button class="ghost btn-sm" data-action="disarm">
+                        Снять
+                    </button>
+                    <button class="ghost btn-sm" data-action="clear">
+                        Сброс тревоги
+                    </button>
+                </div>
+                <div class="security-grid" id="deviceSecurityGrid"></div>
+            </section>
 
-    <section id="deviceAvrView" class="card hidden">
-      <div class="row">
-        <h1>АВР</h1>
-        <button class="ghost" id="backToControllersFromAvr">Назад</button>
-      </div>
-      <div class="notice" id="deviceAvrNotice"></div>
-      <div class="avr-wrap" id="deviceAvrWrap"></div>
-    </section>
+            <section id="deviceMeteoView" class="card hidden">
+                <div class="row">
+                    <h1>Метео</h1>
+                    <button class="ghost" id="backToControllersFromMeteo">
+                        Назад
+                    </button>
+                </div>
+                <div class="notice" id="deviceMeteoNotice"></div>
+                <div class="meteo-grid" id="deviceMeteoGrid"></div>
+            </section>
 
-    <section id="deviceLeakView" class="card hidden">
-      <div class="row">
-        <h1>Протечки</h1>
-        <button class="ghost" id="backToControllersFromLeak">Назад</button>
-      </div>
-      <div class="notice" id="deviceLeakNotice"></div>
-      <div class="socket-actions" id="deviceLeakActions">
-        <button class="ghost btn-sm" data-action="ack_all">Сбросить все</button>
-      </div>
-      <div class="leak-grid" id="deviceLeakGrid"></div>
-    </section>
+            <section id="deviceThermoView" class="card hidden">
+                <div class="row">
+                    <h1>Термо</h1>
+                    <button class="ghost" id="backToControllersFromThermo">
+                        Назад
+                    </button>
+                </div>
+                <div class="notice" id="deviceThermoNotice"></div>
+                <div class="thermo-grid" id="deviceThermoGrid"></div>
+            </section>
 
-    <section id="deviceNetworkView" class="card hidden">
-      <div class="row">
-        <h1>Сеть</h1>
-        <button class="ghost" id="backToDevicesFromNetwork">Назад</button>
-      </div>
-      <div class="network-grid">
-        <section class="interface-card">
-          <h2>Wi-Fi</h2>
-          <table class="status-table">
-            <tbody id="deviceWifiBody"></tbody>
-          </table>
-        </section>
-        <section class="interface-card">
-          <h2>GSM</h2>
-          <table class="status-table">
-            <tbody id="deviceGsmBody"></tbody>
-          </table>
-        </section>
-      </div>
-    </section>
+            <section id="deviceSepticView" class="card hidden">
+                <div class="row">
+                    <h1>Септик</h1>
+                    <button class="ghost" id="backToControllersFromSeptic">
+                        Назад
+                    </button>
+                </div>
+                <div class="notice" id="deviceSepticNotice"></div>
+                <div class="septic-grid" id="deviceSepticGrid"></div>
+            </section>
 
-  </div>
+            <section id="deviceWateringView" class="card hidden">
+                <div class="row">
+                    <h1>Полив</h1>
+                    <button class="ghost" id="backToControllersFromWatering">
+                        Назад
+                    </button>
+                </div>
+                <div class="notice" id="deviceWateringNotice"></div>
+                <div class="watering-grid" id="deviceWateringGrid"></div>
+            </section>
 
-  <script type="module" src="/js/main.js"></script>
-</body>
+            <section id="deviceRingView" class="card hidden">
+                <div class="row">
+                    <h1>Звонок</h1>
+                    <button class="ghost" id="backToControllersFromRing">
+                        Назад
+                    </button>
+                </div>
+                <div class="notice" id="deviceRingNotice"></div>
+                <div class="ring-wrap" id="deviceRingWrap"></div>
+            </section>
+
+            <section id="deviceAvrView" class="card hidden">
+                <div class="row">
+                    <h1>АВР</h1>
+                    <button class="ghost" id="backToControllersFromAvr">
+                        Назад
+                    </button>
+                </div>
+                <div class="notice" id="deviceAvrNotice"></div>
+                <div class="avr-wrap" id="deviceAvrWrap"></div>
+            </section>
+
+            <section id="deviceLeakView" class="card hidden">
+                <div class="row">
+                    <h1>Протечки</h1>
+                    <button class="ghost" id="backToControllersFromLeak">
+                        Назад
+                    </button>
+                </div>
+                <div class="notice" id="deviceLeakNotice"></div>
+                <div class="socket-actions" id="deviceLeakActions">
+                    <button class="ghost btn-sm" data-action="ack_all">
+                        Сбросить все
+                    </button>
+                </div>
+                <div class="leak-grid" id="deviceLeakGrid"></div>
+            </section>
+
+            <section id="deviceNetworkView" class="card hidden">
+                <div class="row">
+                    <h1>Сеть</h1>
+                    <button class="ghost" id="backToDevicesFromNetwork">
+                        Назад
+                    </button>
+                </div>
+                <div class="network-grid">
+                    <section class="interface-card">
+                        <h2>Wi-Fi</h2>
+                        <table class="status-table">
+                            <tbody id="deviceWifiBody"></tbody>
+                        </table>
+                    </section>
+                    <section class="interface-card">
+                        <h2>GSM</h2>
+                        <table class="status-table">
+                            <tbody id="deviceGsmBody"></tbody>
+                        </table>
+                    </section>
+                </div>
+            </section>
+        </div>
+
+        <script type="module" src="/js/main.js"></script>
+    </body>
 </html>

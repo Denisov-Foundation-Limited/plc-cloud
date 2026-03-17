@@ -1,470 +1,537 @@
 {
-  "name": "plc-esp2-ws",
-  "version": 1,
-  "transport": "websocket",
-  "roles": {
-    "client": "esp32",
-    "server": "nodejs"
-  },
-  "limits": {
-    "max_stack_nodes": 8,
-    "max_frame_bytes": 4096
-  },
-  "envelope": {
-    "description": "All messages use this envelope.",
-    "fields": [
-      { "name": "v", "type": "u8", "required": true, "note": "protocol version" },
-      { "name": "type", "type": "string", "required": true, "note": "message type" },
-      { "name": "id", "type": "string", "required": true, "note": "request id" },
-      { "name": "reply_to", "type": "string", "required": false, "note": "request id being answered" },
-      { "name": "ts", "type": "u64", "required": false, "note": "epoch ms" },
-      { "name": "unit", "type": "string", "required": false, "note": "local or stack" },
-      { "name": "node_id", "type": "u32", "required": false, "note": "stack node id if unit=stack" },
-      { "name": "part", "type": "u16", "required": false, "note": "multipart part index (1-based)" },
-      { "name": "parts", "type": "u16", "required": false, "note": "multipart total parts" },
-      { "name": "done", "type": "bool", "required": false, "note": "multipart completion flag" },
-      { "name": "auth", "type": "object", "required": false, "note": "auth block (api_key), only for hello" },
-      { "name": "session_id", "type": "string", "required": false, "note": "session token after hello" },
-      { "name": "payload", "type": "object", "required": false }
-    ]
-  },
-  "messages": {
-    "hello": {
-      "direction": "client_to_server",
-      "payload": "device_hello"
+    "name": "plc-esp2-ws",
+    "version": 1,
+    "transport": "websocket",
+    "roles": {
+        "client": "esp32",
+        "server": "nodejs"
     },
-    "hello_ack": {
-      "direction": "server_to_client",
-      "payload": "server_hello"
+    "limits": {
+        "max_stack_nodes": 8,
+        "max_frame_bytes": 4096
     },
-    "ping": {
-      "direction": "both",
-      "payload": "ping"
+    "envelope": {
+        "description": "All messages use this envelope.",
+        "fields": [
+            {
+                "name": "v",
+                "type": "u8",
+                "required": true,
+                "note": "protocol version"
+            },
+            {
+                "name": "type",
+                "type": "string",
+                "required": true,
+                "note": "message type"
+            },
+            {
+                "name": "id",
+                "type": "string",
+                "required": true,
+                "note": "request id"
+            },
+            {
+                "name": "reply_to",
+                "type": "string",
+                "required": false,
+                "note": "request id being answered"
+            },
+            {
+                "name": "ts",
+                "type": "u64",
+                "required": false,
+                "note": "epoch ms"
+            },
+            {
+                "name": "unit",
+                "type": "string",
+                "required": false,
+                "note": "local or stack"
+            },
+            {
+                "name": "node_id",
+                "type": "u32",
+                "required": false,
+                "note": "stack node id if unit=stack"
+            },
+            {
+                "name": "part",
+                "type": "u16",
+                "required": false,
+                "note": "multipart part index (1-based)"
+            },
+            {
+                "name": "parts",
+                "type": "u16",
+                "required": false,
+                "note": "multipart total parts"
+            },
+            {
+                "name": "done",
+                "type": "bool",
+                "required": false,
+                "note": "multipart completion flag"
+            },
+            {
+                "name": "auth",
+                "type": "object",
+                "required": false,
+                "note": "auth block (api_key), only for hello"
+            },
+            {
+                "name": "session_id",
+                "type": "string",
+                "required": false,
+                "note": "session token after hello"
+            },
+            { "name": "payload", "type": "object", "required": false }
+        ]
     },
-    "pong": {
-      "direction": "both",
-      "payload": "pong"
-    },
-    "get": {
-      "direction": "server_to_client",
-      "payload": "get_request"
-    },
-    "result": {
-      "direction": "client_to_server",
-      "payload": "get_result"
-    },
-    "event": {
-      "direction": "client_to_server",
-      "payload": "event_payload"
-    },
-    "cmd": {
-      "direction": "server_to_client",
-      "payload": "controller_command"
-    },
-    "ack": {
-      "direction": "client_to_server",
-      "payload": "command_result"
-    },
-    "error": {
-      "direction": "both",
-      "payload": "error"
-    }
-  },
-  "data_types": {
-    "device_hello": {
-      "device_id": "u32",
-      "device_name": "string",
-      "fw_version": "string",
-      "hw": "string",
-      "uptime_s": "u32",
-      "mac": "string",
-      "ip": "string",
-      "stack": {
-        "role": "master|slave",
-        "node_id": "u32",
-        "nodes": "stack_node[]"
-      }
-    },
-    "auth_api_key": {
-      "api_key": "string"
-    },
-    "server_hello": {
-      "session_id": "string",
-      "server_time_ms": "u64",
-      "request_initial": "string[]"
-    },
-    "ping": {
-      "nonce": "string"
-    },
-    "pong": {
-      "nonce": "string"
-    },
-    "get_request": {
-      "what": "string[]",
-      "note": "allowed: system, controllers, stack"
-    },
-    "get_result": {
-      "ok": "bool",
-      "data": "object",
-      "error": "string",
-      "part": "u16",
-      "parts": "u16",
-      "done": "bool"
-    },
-    "event_payload": {
-      "kind": "string",
-      "reason": "startup|periodic|change",
-      "data": "object"
-    },
-    "controller_command": {
-      "controller": "string",
-      "action": "string",
-      "args": "object",
-      "actor": "actor_info"
-    },
-    "command_result": {
-      "ok": "bool",
-      "error": "string",
-      "data": "object"
-    },
-    "error": {
-      "code": "string",
-      "message": "string",
-      "details": "object"
-    },
-    "actor_info": {
-      "uid": "string",
-      "username": "string",
-      "plc_username": "string",
-      "source": "web|telegram|cloud_api",
-      "session_id": "string"
-    },
-    "stack_node": {
-      "node_id": "u32",
-      "name": "string",
-      "online": "bool",
-      "last_seen_ms": "u64"
-    },
-    "system_info": {
-      "device_name": "string",
-      "uptime_ms": "u32",
-      "board": "string",
-      "fw_version": "string",
-      "wifi": {
-        "mode": "ap|sta",
-        "ssid": "string",
-        "ap_ssid": "string",
-        "ip": "string",
-        "mac": "string"
-      },
-      "plc": {
-        "board_temp": "float",
-        "cpu_temp": "float"
-      },
-      "fan": {
-        "mode": "auto|manual",
-        "fan_on": "bool",
-        "on_c": "float",
-        "hyst_c": "float"
-      },
-      "rtc": {
-        "date": "string",
-        "time": "string",
-        "weekday": "u8",
-        "temp_c": "float"
-      },
-      "gsm": {
-        "enabled": "bool",
-        "started": "bool",
-        "imei": "string",
-        "imsi": "string",
-        "operator": "string",
-        "signal": "string",
-        "reg_status": "string",
-        "last_error": "string",
-        "last_urc": "string",
-        "last_call": "string",
-        "last_ussd": "string",
-        "last_http_status": "i32",
-        "last_http_len": "i32"
-      }
-    },
-    "controllers_info": {
-      "sockets": "socket_state[]",
-      "lights": "light_state[]",
-      "meteo": "meteo_state[]",
-      "thermo": "thermo_state[]",
-      "tanks": "tank_state[]",
-      "septic": "septic_state[]",
-      "watering": "watering_state[]",
-      "security": "security_state",
-      "ring": "ring_state",
-      "avr": "avr_state",
-      "leak": "leak_state[]"
-    },
-    "socket_state": {
-      "id": "u8",
-      "name": "string",
-      "enabled": "bool",
-      "button": "u8",
-      "relay": "u8",
-      "state": "bool"
-    },
-    "light_state": {
-      "id": "u8",
-      "name": "string",
-      "enabled": "bool",
-      "button": "u8",
-      "relay": "u8",
-      "state": "bool"
-    },
-    "meteo_state": {
-      "id": "u8",
-      "enabled": "bool",
-      "name": "string",
-      "type": "string",
-      "pin": "u8",
-      "addr": "string",
-      "temp_c": "float",
-      "hum": "float",
-      "has_temp": "bool",
-      "has_hum": "bool",
-      "ok": "bool"
-    },
-    "thermo_state": {
-      "id": "u8",
-      "name": "string",
-      "enabled": "bool",
-      "power_on": "bool",
-      "sensor": "u8",
-      "mode": "off|heat_only|cool_only|auto",
-      "target": "float",
-      "hyst": "float",
-      "heat": "u8",
-      "cool": "u8",
-      "button": "u8",
-      "heat_on": "bool",
-      "cool_on": "bool"
-    },
-    "tank_state": {
-      "id": "u8",
-      "name": "string",
-      "enabled": "bool",
-      "power_on": "bool",
-      "low": "u8",
-      "mid": "u8",
-      "full": "u8",
-      "valve": "u8",
-      "pump": "u8",
-      "alarm": "u8",
-      "level_low": "bool",
-      "level_mid": "bool",
-      "level_full": "bool",
-      "levels_ok": "bool",
-      "valve_on": "bool",
-      "pump_on": "bool",
-      "alarm_on": "bool"
-    },
-    "septic_state": {
-      "id": "u8",
-      "name": "string",
-      "enabled": "bool",
-      "monitor": "bool",
-      "warning_port": "u8",
-      "alarm_port": "u8",
-      "relay_warning": "u8",
-      "relay_alarm": "u8",
-      "warning": "bool",
-      "alarm": "bool"
-    },
-    "watering_state": {
-      "id": "u8",
-      "name": "string",
-      "enabled": "bool",
-      "status": "bool",
-      "port": "u8",
-      "tank": "u8",
-      "weekdays_mask": "u8",
-      "hour": "u8",
-      "minute": "u8",
-      "duration_s": "u32",
-      "hour2": "u8",
-      "minute2": "u8",
-      "duration2_s": "u32",
-      "hour3": "u8",
-      "minute3": "u8",
-      "duration3_s": "u32",
-      "resume": "bool",
-      "resume_level": "u8",
-      "active": "bool",
-      "paused": "bool",
-      "remaining_ms": "u32"
-    },
-    "security_state": {
-      "enabled": "bool",
-      "armed": "bool",
-      "alarm": "bool",
-      "siren": "u8",
-      "sensors": "security_detect[]"
-    },
-    "security_detect": {
-      "id": "u8",
-      "enabled": "bool",
-      "name": "string",
-      "type": "reed|pir",
-      "port": "u8",
-      "silent": "bool",
-      "detect": "bool"
-    },
-    "ring_state": {
-      "enabled": "bool",
-      "button": "u8",
-      "relay": "u8",
-      "relay_on": "bool"
-    },
-    "avr_state": {
-      "enabled": "bool",
-      "auto_mode": "bool",
-      "prefer_main": "bool",
-      "auto_return_main": "bool",
-      "main_ok_port": "u8",
-      "reserve_ok_port": "u8",
-      "relay_main_port": "u8",
-      "relay_reserve_port": "u8",
-      "feedback_main_port": "u8",
-      "feedback_reserve_port": "u8",
-      "main_ok": "bool",
-      "reserve_ok": "bool",
-      "relay_main_on": "bool",
-      "relay_reserve_on": "bool",
-      "active_source": "off|main|reserve",
-      "target_source": "off|main|reserve",
-      "fault": "none|no_source|transfer_timeout|interlock|feedback_mismatch",
-      "transfer": "bool"
-    },
-    "leak_state": {
-      "id": "u8",
-      "name": "string",
-      "enabled": "bool",
-      "power_on": "bool",
-      "sensor_active_low": "bool",
-      "sensor": "u8",
-      "valve": "u8",
-      "alarm": "u8",
-      "wet": "bool",
-      "alarm_latched": "bool"
-    }
-  },
-  "controller_commands": {
-    "sockets": [
-      { "action": "set", "args": { "id": "u8", "state": "on|off" } },
-      { "action": "toggle", "args": { "id": "u8" } }
-    ],
-    "lights": [
-      { "action": "set", "args": { "id": "u8", "state": "on|off" } },
-      { "action": "toggle", "args": { "id": "u8" } }
-    ],
-    "thermo": [
-      { "action": "power", "args": { "id": "u8", "state": "on|off" } },
-      { "action": "mode", "args": { "id": "u8", "mode": "off|heat_only|cool_only|auto" } },
-      { "action": "target", "args": { "id": "u8", "target_c": "float" } }
-    ],
-    "tanks": [
-      { "action": "power", "args": { "id": "u8", "state": "on|off" } }
-    ],
-    "septic": [
-      { "action": "monitor", "args": { "id": "u8", "state": "on|off" } }
-    ],
-    "watering": [
-      { "action": "status", "args": { "id": "u8", "state": "on|off" } }
-    ],
-    "security": [
-      { "action": "arm", "args": {} },
-      { "action": "disarm", "args": {} },
-      { "action": "clear", "args": {} },
-      { "action": "rfid", "args": { "uid": "string", "name": "string" } },
-      { "action": "ibutton", "args": { "serial": "string", "name": "string" } }
-    ],
-    "ring": [
-      { "action": "hold", "args": { "state": "on|off" } }
-    ],
-    "avr": [
-      { "action": "auto", "args": { "state": "on|off" } },
-      { "action": "source", "args": { "source": "off|main|reserve" } },
-      { "action": "clear_fault", "args": {} }
-    ],
-    "leak": [
-      { "action": "power", "args": { "id": "u8", "state": "on|off" } },
-      { "action": "ack", "args": { "id": "u8" } },
-      { "action": "ack_all", "args": {} }
-    ]
-  },
-  "rules": {
-    "no_config": true,
-    "note": "Configuration is read-only for now; no config update commands are defined.",
-    "stack_notes": [
-      "stack.nodes includes only nodes with slave_controller=true (controller devices).",
-      "stack aggregation from slave replies may be multipart (part/parts/done); cloud sends merged final result."
-    ],
-    "auth": [
-      {
-        "required": true,
-        "type": "api_key",
-        "placement": "envelope.auth",
-        "scope": "hello",
-        "notes": "Server validates api_key only in hello."
-      },
-      {
-        "required": true,
-        "type": "session_id",
-        "placement": "envelope.session_id",
-        "scope": "all_except_hello",
-        "notes": "Server rejects messages without valid session_id."
-      }
-    ]
-  },
-  "examples": {
-    "hello": {
-      "v": 1,
-      "type": "hello",
-      "id": "c1",
-      "ts": 0,
-      "auth": { "api_key": "YOUR_KEY" },
-      "payload": {
-        "device_id": 12345678,
-        "device_name": "PLC-ESP",
-        "fw_version": "1.0.0",
-        "hw": "esp32",
-        "uptime_s": 123,
-        "mac": "AA:BB:CC:DD:EE:FF",
-        "ip": "192.168.1.50",
-        "stack": {
-          "role": "master",
-          "node_id": 12345678,
-          "nodes": []
+    "messages": {
+        "hello": {
+            "direction": "client_to_server",
+            "payload": "device_hello"
+        },
+        "hello_ack": {
+            "direction": "server_to_client",
+            "payload": "server_hello"
+        },
+        "ping": {
+            "direction": "both",
+            "payload": "ping"
+        },
+        "pong": {
+            "direction": "both",
+            "payload": "pong"
+        },
+        "get": {
+            "direction": "server_to_client",
+            "payload": "get_request"
+        },
+        "result": {
+            "direction": "client_to_server",
+            "payload": "get_result"
+        },
+        "event": {
+            "direction": "client_to_server",
+            "payload": "event_payload"
+        },
+        "cmd": {
+            "direction": "server_to_client",
+            "payload": "controller_command"
+        },
+        "ack": {
+            "direction": "client_to_server",
+            "payload": "command_result"
+        },
+        "error": {
+            "direction": "both",
+            "payload": "error"
         }
-      }
     },
-    "get_controllers": {
-      "v": 1,
-      "type": "get",
-      "id": "s1",
-      "unit": "local",
-      "session_id": "SESSION_ABC",
-      "payload": { "what": ["controllers"] }
+    "data_types": {
+        "device_hello": {
+            "device_id": "u32",
+            "device_name": "string",
+            "fw_version": "string",
+            "hw": "string",
+            "uptime_s": "u32",
+            "mac": "string",
+            "ip": "string",
+            "stack": {
+                "role": "master|slave",
+                "node_id": "u32",
+                "nodes": "stack_node[]"
+            }
+        },
+        "auth_api_key": {
+            "api_key": "string"
+        },
+        "server_hello": {
+            "session_id": "string",
+            "server_time_ms": "u64",
+            "request_initial": "string[]"
+        },
+        "ping": {
+            "nonce": "string"
+        },
+        "pong": {
+            "nonce": "string"
+        },
+        "get_request": {
+            "what": "string[]",
+            "note": "allowed: system, controllers, stack, authz"
+        },
+        "get_result": {
+            "ok": "bool",
+            "data": "object",
+            "error": "string",
+            "part": "u16",
+            "parts": "u16",
+            "done": "bool"
+        },
+        "event_payload": {
+            "kind": "string",
+            "reason": "startup|periodic|change",
+            "data": "object"
+        },
+        "controller_command": {
+            "controller": "string",
+            "action": "string",
+            "args": "object",
+            "actor": "actor_info"
+        },
+        "command_result": {
+            "ok": "bool",
+            "error": "string",
+            "data": "object"
+        },
+        "error": {
+            "code": "string",
+            "message": "string",
+            "details": "object"
+        },
+        "actor_info": {
+            "uid": "string",
+            "username": "string",
+            "plc_username": "string",
+            "source": "web|telegram|cloud_api",
+            "session_id": "string"
+        },
+        "stack_node": {
+            "node_id": "u32",
+            "name": "string",
+            "online": "bool",
+            "last_seen_ms": "u64"
+        },
+        "system_info": {
+            "device_name": "string",
+            "uptime_ms": "u32",
+            "board": "string",
+            "fw_version": "string",
+            "wifi": {
+                "mode": "ap|sta",
+                "ssid": "string",
+                "ap_ssid": "string",
+                "ip": "string",
+                "mac": "string"
+            },
+            "plc": {
+                "board_temp": "float",
+                "cpu_temp": "float"
+            },
+            "fan": {
+                "mode": "auto|manual",
+                "fan_on": "bool",
+                "on_c": "float",
+                "hyst_c": "float"
+            },
+            "rtc": {
+                "date": "string",
+                "time": "string",
+                "weekday": "u8",
+                "temp_c": "float"
+            },
+            "gsm": {
+                "enabled": "bool",
+                "started": "bool",
+                "imei": "string",
+                "imsi": "string",
+                "operator": "string",
+                "signal": "string",
+                "reg_status": "string",
+                "last_error": "string",
+                "last_urc": "string",
+                "last_call": "string",
+                "last_ussd": "string",
+                "last_http_status": "i32",
+                "last_http_len": "i32"
+            }
+        },
+        "controllers_info": {
+            "sockets": "socket_state[]",
+            "lights": "light_state[]",
+            "meteo": "meteo_state[]",
+            "thermo": "thermo_state[]",
+            "tanks": "tank_state[]",
+            "septic": "septic_state[]",
+            "watering": "watering_state[]",
+            "security": "security_state",
+            "ring": "ring_state",
+            "avr": "avr_state",
+            "leak": "leak_state[]"
+        },
+        "socket_state": {
+            "id": "u8",
+            "name": "string",
+            "enabled": "bool",
+            "button": "u8",
+            "relay": "u8",
+            "state": "bool"
+        },
+        "light_state": {
+            "id": "u8",
+            "name": "string",
+            "enabled": "bool",
+            "button": "u8",
+            "relay": "u8",
+            "state": "bool"
+        },
+        "meteo_state": {
+            "id": "u8",
+            "enabled": "bool",
+            "name": "string",
+            "type": "string",
+            "pin": "u8",
+            "addr": "string",
+            "temp_c": "float",
+            "hum": "float",
+            "has_temp": "bool",
+            "has_hum": "bool",
+            "ok": "bool"
+        },
+        "thermo_state": {
+            "id": "u8",
+            "name": "string",
+            "enabled": "bool",
+            "power_on": "bool",
+            "sensor": "u8",
+            "mode": "off|heat_only|cool_only|auto",
+            "target": "float",
+            "hyst": "float",
+            "heat": "u8",
+            "cool": "u8",
+            "button": "u8",
+            "heat_on": "bool",
+            "cool_on": "bool"
+        },
+        "tank_state": {
+            "id": "u8",
+            "name": "string",
+            "enabled": "bool",
+            "power_on": "bool",
+            "low": "u8",
+            "mid": "u8",
+            "full": "u8",
+            "valve": "u8",
+            "pump": "u8",
+            "alarm": "u8",
+            "level_low": "bool",
+            "level_mid": "bool",
+            "level_full": "bool",
+            "levels_ok": "bool",
+            "valve_on": "bool",
+            "pump_on": "bool",
+            "alarm_on": "bool"
+        },
+        "septic_state": {
+            "id": "u8",
+            "name": "string",
+            "enabled": "bool",
+            "monitor": "bool",
+            "warning_port": "u8",
+            "alarm_port": "u8",
+            "relay_warning": "u8",
+            "relay_alarm": "u8",
+            "warning": "bool",
+            "alarm": "bool"
+        },
+        "watering_state": {
+            "id": "u8",
+            "name": "string",
+            "enabled": "bool",
+            "status": "bool",
+            "port": "u8",
+            "tank": "u8",
+            "weekdays_mask": "u8",
+            "hour": "u8",
+            "minute": "u8",
+            "duration_s": "u32",
+            "hour2": "u8",
+            "minute2": "u8",
+            "duration2_s": "u32",
+            "hour3": "u8",
+            "minute3": "u8",
+            "duration3_s": "u32",
+            "resume": "bool",
+            "resume_level": "u8",
+            "active": "bool",
+            "paused": "bool",
+            "remaining_ms": "u32"
+        },
+        "security_state": {
+            "enabled": "bool",
+            "armed": "bool",
+            "alarm": "bool",
+            "siren": "u8",
+            "sensors": "security_detect[]"
+        },
+        "security_detect": {
+            "id": "u8",
+            "enabled": "bool",
+            "name": "string",
+            "type": "reed|pir",
+            "port": "u8",
+            "silent": "bool",
+            "detect": "bool"
+        },
+        "ring_state": {
+            "enabled": "bool",
+            "button": "u8",
+            "relay": "u8",
+            "relay_on": "bool"
+        },
+        "avr_state": {
+            "enabled": "bool",
+            "auto_mode": "bool",
+            "prefer_main": "bool",
+            "auto_return_main": "bool",
+            "main_ok_port": "u8",
+            "reserve_ok_port": "u8",
+            "relay_main_port": "u8",
+            "relay_reserve_port": "u8",
+            "feedback_main_port": "u8",
+            "feedback_reserve_port": "u8",
+            "main_ok": "bool",
+            "reserve_ok": "bool",
+            "relay_main_on": "bool",
+            "relay_reserve_on": "bool",
+            "active_source": "off|main|reserve",
+            "target_source": "off|main|reserve",
+            "fault": "none|no_source|transfer_timeout|interlock|feedback_mismatch",
+            "transfer": "bool"
+        },
+        "leak_state": {
+            "id": "u8",
+            "name": "string",
+            "enabled": "bool",
+            "power_on": "bool",
+            "sensor_active_low": "bool",
+            "sensor": "u8",
+            "valve": "u8",
+            "alarm": "u8",
+            "wet": "bool",
+            "alarm_latched": "bool"
+        }
     },
-    "cmd_socket_on": {
-      "v": 1,
-      "type": "cmd",
-      "id": "k1",
-      "unit": "stack",
-      "node_id": 87654321,
-      "session_id": "SESSION_ABC",
-      "payload": {
-        "controller": "sockets",
-        "action": "set",
-        "args": { "id": 3, "state": "on" }
-      }
+    "controller_commands": {
+        "quick_actions": [
+            { "action": "run", "args": { "preset": "home|prepare|away" } }
+        ],
+        "sockets": [
+            { "action": "set", "args": { "id": "u8", "state": "on|off" } },
+            { "action": "toggle", "args": { "id": "u8" } }
+        ],
+        "lights": [
+            { "action": "set", "args": { "id": "u8", "state": "on|off" } },
+            { "action": "toggle", "args": { "id": "u8" } }
+        ],
+        "thermo": [
+            { "action": "power", "args": { "id": "u8", "state": "on|off" } },
+            {
+                "action": "mode",
+                "args": { "id": "u8", "mode": "off|heat_only|cool_only|auto" }
+            },
+            { "action": "target", "args": { "id": "u8", "target_c": "float" } }
+        ],
+        "tanks": [
+            { "action": "power", "args": { "id": "u8", "state": "on|off" } }
+        ],
+        "septic": [
+            { "action": "monitor", "args": { "id": "u8", "state": "on|off" } }
+        ],
+        "watering": [
+            { "action": "status", "args": { "id": "u8", "state": "on|off" } }
+        ],
+        "security": [
+            { "action": "arm", "args": {} },
+            { "action": "disarm", "args": {} },
+            { "action": "clear", "args": {} },
+            { "action": "rfid", "args": { "uid": "string", "name": "string" } },
+            {
+                "action": "ibutton",
+                "args": { "serial": "string", "name": "string" }
+            }
+        ],
+        "ring": [{ "action": "hold", "args": { "state": "on|off" } }],
+        "avr": [
+            { "action": "auto", "args": { "state": "on|off" } },
+            { "action": "source", "args": { "source": "off|main|reserve" } },
+            { "action": "clear_fault", "args": {} }
+        ],
+        "leak": [
+            { "action": "power", "args": { "id": "u8", "state": "on|off" } },
+            { "action": "ack", "args": { "id": "u8" } },
+            { "action": "ack_all", "args": {} }
+        ]
+    },
+    "rules": {
+        "no_config": true,
+        "note": "Configuration is read-only for now; no config update commands are defined.",
+        "stack_notes": [
+            "stack.nodes includes only nodes with slave_controller=true (controller devices).",
+            "stack aggregation from slave replies may be multipart (part/parts/done); cloud sends merged final result."
+        ],
+        "auth": [
+            {
+                "required": true,
+                "type": "api_key",
+                "placement": "envelope.auth",
+                "scope": "hello",
+                "notes": "Server validates api_key only in hello."
+            },
+            {
+                "required": true,
+                "type": "session_id",
+                "placement": "envelope.session_id",
+                "scope": "all_except_hello",
+                "notes": "Server rejects messages without valid session_id."
+            }
+        ]
+    },
+    "examples": {
+        "hello": {
+            "v": 1,
+            "type": "hello",
+            "id": "c1",
+            "ts": 0,
+            "auth": { "api_key": "YOUR_KEY" },
+            "payload": {
+                "device_id": 12345678,
+                "device_name": "PLC-ESP",
+                "fw_version": "1.0.0",
+                "hw": "esp32",
+                "uptime_s": 123,
+                "mac": "AA:BB:CC:DD:EE:FF",
+                "ip": "192.168.1.50",
+                "stack": {
+                    "role": "master",
+                    "node_id": 12345678,
+                    "nodes": []
+                }
+            }
+        },
+        "get_controllers": {
+            "v": 1,
+            "type": "get",
+            "id": "s1",
+            "unit": "local",
+            "session_id": "SESSION_ABC",
+            "payload": { "what": ["controllers"] }
+        },
+        "cmd_socket_on": {
+            "v": 1,
+            "type": "cmd",
+            "id": "k1",
+            "unit": "stack",
+            "node_id": 87654321,
+            "session_id": "SESSION_ABC",
+            "payload": {
+                "controller": "sockets",
+                "action": "set",
+                "args": { "id": 3, "state": "on" }
+            }
+        }
     }
-  }
 }

@@ -1,306 +1,458 @@
 # AGENTS.md
 
-## Project Purpose
-`plc-cloud` is a cloud server for PLC/ESP32 controllers with a web UI.
+## Назначение проекта
 
-Main responsibilities:
-- authenticate web users;
-- keep online device sessions alive;
-- proxy protocol commands between browser and devices using `proto.json`.
+`plc-cloud` - облачный шлюз и веб-интерфейс для PLC/ESP32-контроллеров.
 
-## Runtime Architecture
-- HTTP server: Express + REST API + static files from `public/`.
-- Two WebSocket endpoints on the same HTTP server:
-- `/ws/device` for ESP32 devices.
-- `/ws/web` for browser clients.
-- Persistent data is stored in JSON files under `data/`.
-- Live online state is kept in memory (`DeviceRegistry`).
+Проект отвечает за:
 
-Data flow:
-1. Device connects to `/ws/device` and sends `hello` with `auth.api_key`.
-2. Server validates key in `DevicesDb`, creates session, returns `hello_ack` with `session_id`.
-3. Device sends `result/event/ack`; server updates registry state and broadcasts `device_update`.
-4. Browser sends `send_get/send_cmd` on `/ws/web`; server forwards to device session.
+- аутентификацию веб-пользователей;
+- поддержку websocket-сессий устройств;
+- проксирование протокольных команд между браузером, Telegram и PLC;
+- хранение конфигурации в `data/`;
+- поддержку live runtime state и ACL-фильтрации в памяти.
 
-## Backend Modules (`src/`)
+## Текущая топология рантайма
 
-### `src/index.js`
-- Entry point.
-- Builds app via `AppContainer`, calls `init()`, then `listen()`.
-- Uses logger format: `[YYYY-MM-DD][HH:mm:ss][LEVEL][SCOPE] message`.
-- Current bind host is hardcoded to `192.168.1.108`; port is `PORT` or `3000`.
+- Web listener: `http://HOST:WEB_PORT`
+- Web port по умолчанию: `80`
+- Device listener: `ws://HOST:PORT/ws/device`
+- Device port по умолчанию: `3001`
+- Browser websocket endpoint: `ws://HOST:WEB_PORT/ws/web`
 
-### `src/app/AppContainer.js`
-- Resolves project paths:
-- `data/`, `public/`, `proto.json`.
-- Passes defaults into `AppServer`:
-- `defaultObjects: ['Kvartira', 'Dacha', 'Derevnya']` (actual runtime values in code are Russian strings)
-- `onlineTtlMs: 30000`
+Поднимаются два отдельных HTTP-сервера:
 
-### `src/app/AppServer.js`
-- Main app orchestrator.
-- On `init()`:
-- ensures data directory exists;
-- builds datastores via `DatastoreFactory`;
-- builds HTTP via `HttpFactory`;
-- builds WS via `WsFactory`;
-- starts timers:
-- stale device cleanup every 5s;
-- device ping loop every 10s.
-- Broadcasts `device_offline` when session is disconnected/expired.
+- `webServer` обслуживает UI, REST API и `/ws/web`
+- `deviceServer` принимает `/ws/device`
 
-### `src/app/factories/DatastoreFactory.js`
-- Creates `UsersDb` and `DevicesDb`.
-- Calls `init()` for both.
-- Seeds demo device only if `PLC_CLOUD_SEED_SAMPLE=1`.
+## Схема модулей
 
-### `src/app/factories/HttpFactory.js`
-- Configures middleware:
-- `express.json()`
-- `cookie-parser`
-- `express.static(publicDir)`
-- Mounts API routes via `ApiRouter`.
-- Returns Express app and Node HTTP server.
+```mermaid
+flowchart TB
+    subgraph Entry["Точка входа"]
+        IDX["src/index.js"]
+    end
 
-### `src/app/factories/WsFactory.js`
-- Creates two `WebSocketServer` instances with `noServer: true`.
-- Routes upgrades by URL prefix:
-- `/ws/device` -> `DeviceWsServer`
-- `/ws/web` -> `WebWsServer`
-- Injects device WS into web WS (`setDeviceWs`) for command forwarding.
+    subgraph DI["DI / awilix"]
+        CTN["AppContainer"]
+    end
 
-### `src/http/ApiRouter.js`
-- REST API with cookie session auth middleware (`requireAuth()`).
-- Endpoints:
-- `POST /api/login`, `POST /api/logout`
+    subgraph Core["Core"]
+        APP["AppServer"]
+        HTTP["HttpFactory"]
+        WSF["WsFactory"]
+        DSF["DatastoreFactory"]
+    end
+
+    subgraph Runtime["Runtime services"]
+        API["ApiRouter"]
+        WWS["WebWsServer"]
+        DWS["DeviceWsServer"]
+        TGB["TelegramBotService"]
+        ACL["AccessControl"]
+        REG["DeviceRegistry"]
+        SES["SessionStore"]
+    end
+
+    subgraph DB["Persistent JSON"]
+        UDB["UsersDb"]
+        DDB["DevicesDb"]
+        TDB["TelegramConfigDb"]
+    end
+
+    IDX --> CTN
+    CTN --> APP
+    APP --> DSF
+    APP --> HTTP
+    APP --> WSF
+    HTTP --> API
+    WSF --> WWS
+    WSF --> DWS
+    API --> UDB
+    API --> DDB
+    API --> TDB
+    API --> SES
+    WWS --> ACL
+    DWS --> REG
+    WWS --> REG
+    TGB --> REG
+    TGB --> DWS
+```
+
+## Dependency Injection
+
+Сборка приложения выполнена через `awilix`.
+
+Entry point:
+
+- [src/index.js](/Users/serg/plc-cloud/src/index.js)
+
+Composition root:
+
+- [src/app/AppContainer.js](/Users/serg/plc-cloud/src/app/AppContainer.js)
+
+Ключевые регистрации:
+
+- config values: `rootDir`, `dataDir`, `publicDir`, `protoPath`, `defaultObjects`, `onlineTtlMs`
+- stores: `SessionStore`, `DeviceRegistry`
+- databases: `UsersDb`, `DevicesDb`, `TelegramConfigDb`
+- factories: `DatastoreFactory`, `HttpFactory`, `WsFactory`
+- runtime services: `ApiRouter`, `WebWsServer`, `DeviceWsServer`, `TelegramBotService`, `AppServer`
+
+Factory-классы используют scoped registrations для runtime-значений вроде `app`, `wss`, `callbacks` и `proto`.
+
+## Ключевые потоки
+
+### Устройство -> облако
+
+1. PLC подключается к `/ws/device`
+2. Отправляет `hello` с `auth.api_key`
+3. Cloud проверяет API key в `DevicesDb`
+4. Возвращает `hello_ack` с `session_id`
+5. Принимает `result`, `ack`, `event`
+6. Обновляет runtime snapshot в `DeviceRegistry`
+7. Шлёт обновления в browser WS и Telegram notifications
+
+### Браузер -> облако -> устройство
+
+1. Пользователь логинится через REST
+2. Браузер подключается к `/ws/web`
+3. Отправляет `send_get` или `send_cmd`
+4. `WebWsServer` валидирует ACL
+5. `DeviceWsServer` пересылает команду PLC
+6. Ответ PLC обновляет snapshot и улетает обратно в браузер
+
+### Telegram -> облако -> устройство
+
+1. `TelegramBotService` работает через `grammY` long polling
+2. Пользователь ищется по `chat_id` или `telegram_username`
+3. Пользователь маппится на `plc_username`
+4. Меню и команды фильтруются PLC ACL
+5. Действия Telegram вызывают `sendCmd/sendGet`
+6. Бот редактирует текущее inline-сообщение
+
+## Основные backend-модули
+
+### [src/index.js](/Users/serg/plc-cloud/src/index.js)
+
+- создаёт `AppContainer`
+- резолвит `appServer` из `awilix`
+- вызывает `init()`
+- запускает:
+  - web listener на `WEB_PORT` или `80`
+  - device listener на `PORT` или `3001`
+- использует `HOST` или `0.0.0.0`
+
+### [src/app/AppContainer.js](/Users/serg/plc-cloud/src/app/AppContainer.js)
+
+- описывает composition root
+- регистрирует БД, runtime state, фабрики и Telegram bot service
+- задаёт дефолты:
+  - `defaultObjects`
+  - `onlineTtlMs = 30000`
+
+### [src/app/AppServer.js](/Users/serg/plc-cloud/src/app/AppServer.js)
+
+- главный orchestrator приложения
+- инициализирует datastores, HTTP, WS и Telegram
+- создаёт два HTTP-сервера из одного Express app
+- запускает:
+  - stale cleanup каждые 5s
+  - device ping loop каждые 10s
+- мостит runtime events в:
+  - browser websocket broadcasts
+  - Telegram notifications
+
+### [src/app/factories/DatastoreFactory.js](/Users/serg/plc-cloud/src/app/factories/DatastoreFactory.js)
+
+- инициализирует:
+  - `UsersDb`
+  - `DevicesDb`
+  - `TelegramConfigDb`
+- сидит sample device только при `PLC_CLOUD_SEED_SAMPLE=1`
+
+### [src/app/factories/HttpFactory.js](/Users/serg/plc-cloud/src/app/factories/HttpFactory.js)
+
+- собирает Express app
+- включает:
+  - `express.json()`
+  - `cookie-parser`
+  - static serving из `public/`
+- принудительно задаёт UTF-8 content types
+- отключает кеш UI assets
+- монтирует REST routes через `ApiRouter`
+- возвращает `createServer()`, чтобы тем же app обслуживать оба listener
+
+### [src/app/factories/WsFactory.js](/Users/serg/plc-cloud/src/app/factories/WsFactory.js)
+
+- создаёт два `WebSocketServer` с `noServer: true`
+- маршрутизирует upgrade:
+  - web server + `/ws/web`
+  - device server + `/ws/device`
+- инжектит `deviceWs` в `webWs`
+
+### [src/http/ApiRouter.js](/Users/serg/plc-cloud/src/http/ApiRouter.js)
+
+REST API с cookie-session auth.
+
+Основные маршруты:
+
+- `POST /api/login`
+- `POST /api/logout`
 - `GET /api/objects`
 - `GET /api/devices?object=...`
 - `GET /api/device/:id`
 - `GET /api/admin/devices`
-- `POST /api/admin/objects`
-- `DELETE /api/admin/objects/:name`
-- `PUT /api/admin/objects/:name`
-- `PUT /api/admin/objects/:name/icon`
-- `POST /api/admin/devices`
-- `PUT /api/admin/devices/:id`
-- `POST /api/admin/devices/:id/rotate_key`
-- `DELETE /api/admin/devices/:id`
+- `GET /api/admin/users`
+- `POST /api/admin/users`
+- `PUT /api/admin/users/:username`
+- `DELETE /api/admin/users/:username`
+- `GET /api/admin/telegram/settings`
+- `PUT /api/admin/telegram/settings`
+- CRUD объектов
+- CRUD устройств
 
-Important behavior:
-- rotating key or deleting device triggers force disconnect callback;
-- object delete is blocked when linked devices exist.
+Особенности:
 
-### `src/ws/DeviceWsServer.js`
-- Handles device connections and protocol validation.
-- Validates envelope fields (`v`, `type`, `id`).
-- Handshake:
-- requires `auth.api_key` in `hello`;
-- stores device session;
-- sends `hello_ack` with `session_id` and initial request hints.
-- Session safety:
-- 10s hello timeout;
-- all non-hello messages require matching `session_id`;
-- invalid session closes socket.
-- Message handling:
-- `ping` -> `pong`;
-- `result` and `ack`: merge `payload.data` into registry state;
-- `event`: merge event data and `last_event`.
-- After state changes, builds summary and notifies web layer callback.
-- Exposes command methods:
-- `sendGet(deviceId, what, unit, nodeId)`
-- `sendCmd(deviceId, controller, action, args, unit, nodeId)`
-- `pingAll()` sends both low-level ws ping and protocol ping.
+- видимость объектов и устройств ACL-фильтруется
+- users admin поддерживает `username`, `password`, `plc_username`, `telegram_username`, `chat_id`
+- Telegram settings API сейчас хранит token и legacy webhook-поля, но runtime transport уже long polling
 
-### `src/ws/WebWsServer.js`
-- Authenticates browser WS by `session` cookie token in `SessionStore`.
-- Supports per-client device subscriptions:
-- `subscribe_device`
-- `unsubscribe_device`
-- Supports browser commands:
-- `list_devices`
-- `send_get`
-- `send_cmd`
-- Broadcast channels:
-- full broadcast: `device_online`, `device_offline`
-- subscription broadcast: `device_update` only to subscribed clients.
+### [src/ws/DeviceWsServer.js](/Users/serg/plc-cloud/src/ws/DeviceWsServer.js)
 
-### `src/state/SessionStore.js`
-- In-memory user sessions (`Map`).
-- Token generation via `crypto.randomUUID()`.
-- No TTL and no persistence across server restart.
+- валидирует envelope протокола
+- обрабатывает `hello`, `ping`, `result`, `ack`, `event`
+- требует `session_id` после handshake
+- мерджит `payload.data` в runtime state
+- хранит pending scope для `local` и `stack`
+- экспортирует:
+  - `sendGet(deviceId, what, unit, nodeId)`
+  - `sendCmd(deviceId, controller, action, args, actor, unit, nodeId)`
+  - `pingAll()`
 
-### `src/state/DeviceRegistry.js`
-- In-memory device session registry.
-- Maps:
-- `sessions: deviceId -> sessionInfo`
-- `socketToDevice: ws -> deviceId`
-- Responsibilities:
-- attach/detach device sockets;
-- update `lastSeenMs`;
-- online check by TTL;
-- keep merged runtime state (`system/controllers/stack/...`);
-- build UI summary objects;
-- list online devices by object;
-- list all devices with online flags;
-- expire stale sessions and close sockets.
+### [src/ws/WebWsServer.js](/Users/serg/plc-cloud/src/ws/WebWsServer.js)
 
-### `src/db/UsersDb.js`
-- JSON file backend for users: `data/users.json`.
-- Creates default `admin` user with empty password hash (`sha256('')`) if missing.
-- Exposes username lookup and credential validation.
+- аутентифицирует browser WS по cookie `session`
+- поддерживает:
+  - `list_devices`
+  - `subscribe_device`
+  - `unsubscribe_device`
+  - `send_get`
+  - `send_cmd`
+- применяет ACL до подписки и до отправки команды
+- шлёт ACL-sanitized `device_update`
 
-### `src/db/DevicesDb.js`
-- JSON file backend for devices/objects: `data/devices.json`.
-- Stores:
-- `objects`: `{ name, icon }` entries (supports old string legacy format too).
-- `devices`: `device_id`, `name`, `api_key`, `object_name`, `last_seen_ms`.
-- Features:
-- object CRUD + rename + icon update;
-- device CRUD + rotate key;
-- lookup by api key and device id;
-- update last seen;
-- upsert by api key during hello.
-- Object icons are normalized to allowed values:
-- `apartment`, `house`, `dacha`, `garage`, `garden`.
-- Invalid icon falls back to `house`.
+### [src/auth/AccessControl.js](/Users/serg/plc-cloud/src/auth/AccessControl.js)
 
-### `src/utils/Logger.js`
-- Small scoped logger with `child(scope)`.
-- Levels: `info`, `warn`, `error`, `debug`.
-- Output format required by project style.
+Текущий слой авторизации.
 
-### `src/utils/crypto.js`
-- `sha256(value)` utility for passwords.
-- `generateApiKey()` utility for device keys.
+Отвечает за:
 
-## Frontend Modules (`public/`)
+- маппинг session user -> PLC identity
+- вычисление прав на device/object/controller
+- санацию summary для REST, browser WS и Telegram
+- валидацию команд через `canSendControllerCommand`
 
-### `public/index.html`
-- Single-page shell with multiple view sections:
+Если ACL отсутствует, код откатывается в legacy permissive-режим.
+
+### [src/state/DeviceRegistry.js](/Users/serg/plc-cloud/src/state/DeviceRegistry.js)
+
+- хранит in-memory device sessions
+- хранит merged runtime state:
+  - `system`
+  - `controllers`
+  - `stack`
+  - `stack_units`
+  - `authz`
+  - `last_event`
+- строит summary snapshots для UI и Telegram
+- отслеживает online TTL
+
+### [src/db/UsersDb.js](/Users/serg/plc-cloud/src/db/UsersDb.js)
+
+JSON-backed users DB.
+
+Поля:
+
+- `username`
+- `password_hash`
+- `plc_username`
+- `telegram_username`
+- `chat_id`
+
+Возможности:
+
+- дефолтный `admin` с пустым паролем, если файла нет
+- поиск по credentials
+- поиск по Telegram identity
+- rename user
+- нормализация telegram username и chat ID
+
+### [src/db/DevicesDb.js](/Users/serg/plc-cloud/src/db/DevicesDb.js)
+
+JSON-backed БД объектов и устройств.
+
+Поля:
+
+- objects: `{ name, icon }`
+- devices: `{ device_id, name, api_key, object_name, last_seen_ms }`
+
+### [src/db/TelegramConfigDb.js](/Users/serg/plc-cloud/src/db/TelegramConfigDb.js)
+
+Хранит Telegram config в `data/telegram.json`.
+
+Важно:
+
+- runtime bot работает через long polling
+- функционально обязателен только `token`
+- `public_base_url`, `webhook_path`, `secret_token` пока сохранены как legacy-поля
+
+### [src/bot/TelegramBotService.js](/Users/serg/plc-cloud/src/bot/TelegramBotService.js)
+
+Telegram bot service на `grammY`.
+
+Текущее поведение:
+
+- long polling, не webhook
+- inline-меню с редактированием одного сообщения
+- корневой экран сразу открывает список объектов
+- неизвестные Telegram users получают `Доступ запрещен`
+- navigation: объект -> устройство/master-slave -> контроллеры
+- отдельные меню:
+  - sockets
+  - lights
+  - meteo
+  - quick actions
+- уведомления:
+  - device online
+  - device offline
+  - события, кроме `reason=periodic`
+
+Menu helpers:
+
+- [src/bot/menu/TgSocketMenu.js](/Users/serg/plc-cloud/src/bot/menu/TgSocketMenu.js)
+- [src/bot/menu/TgLightMenu.js](/Users/serg/plc-cloud/src/bot/menu/TgLightMenu.js)
+- [src/bot/menu/TgMeteoMenu.js](/Users/serg/plc-cloud/src/bot/menu/TgMeteoMenu.js)
+- [src/bot/menu/TgQuickActionMenu.js](/Users/serg/plc-cloud/src/bot/menu/TgQuickActionMenu.js)
+
+## Фронтенд
+
+### [public/index.html](/Users/serg/plc-cloud/public/index.html)
+
+Single-page shell с экранами:
+
 - login
-- object selection
-- settings
-- online device list
-- device status
-- controllers overview
-- sockets
-- lights
-- tanks
-- security
-- meteo
+- objects
+- devices
+- device detail
+- controllers
 - network
-- Top navigation:
-- main menu: `Objects`, `Settings`
-- device menu: `Status`, `Controllers`, `Network`
+- settings home tiles
+- settings subviews:
+  - objects
+  - devices
+  - users
+  - telegram
 
-### `public/styles.css`
-- Dark theme and responsive layout.
-- Tile/card styles for each controller type.
-- SVG visual states:
-- socket on -> green glow;
-- light on -> yellow glow;
-- security alarm -> red glow.
-- Pending command UI classes exist (`.pending`, inline waiting text styles).
+### [public/js/main.js](/Users/serg/plc-cloud/public/js/main.js)
 
-### `public/js/state.js`
-- Shared mutable UI state:
-- ws socket reference;
-- objects list;
-- selected object;
-- current online device list;
-- selected device and latest merged snapshot;
-- selected source scope (`local` or `stack`) and `node_id`.
+- orchestration UI
+- REST + browser websocket integration
+- settings navigation
+- controller refresh
+- admin actions для users/devices/objects
 
-### `public/js/api.js`
-- Fetch wrapper with `credentials: include`.
-- Throws JS `Error` with backend error code if request fails.
+### [public/js/ui.js](/Users/serg/plc-cloud/public/js/ui.js)
 
-### `public/js/ws.js`
-- Browser WS wrapper for `/ws/web`.
-- Handles open/close/message events and forwards handlers to app layer.
+- DOM bindings
+- screen switching
+- renderers для устройств, контроллеров и настроек
+- user cards
+- Telegram settings panel
 
-### `public/js/ui.js`
-- DOM renderer and view controller for all screens.
-- Contains inline SVG generators for:
-- object icons (`apartment`, `house`, `dacha`, `garage`, `garden`);
-- device/controller icons.
-- Main render methods:
-- `renderObjects`, `renderDevices`
-- `renderDevice`, `renderNetwork`
-- `renderSockets`, `renderLights`, `renderTanks`, `renderSecurity`, `renderMeteo`
-- `renderAdminDevices`, `renderAdminObjects`
-- `renderScopeOptions` for local/stack node selector.
+### [public/styles.css](/Users/serg/plc-cloud/public/styles.css)
 
-### `public/js/main.js`
-- Main frontend orchestrator.
-- Handles:
-- login/logout flow;
-- object/device loading;
-- page navigation and back actions;
-- WS subscriptions and command sends;
-- periodic refresh (`DEVICE_POLL_INTERVAL_MS = 3000`);
-- merge of incoming `device_update`.
-- UX logic:
-- if selected object has exactly one online device, auto-open it;
-- source selector applies to status/controller pages (`local` or `stack:N`);
-- after control commands, delayed refresh requests are sent to re-sync UI.
+- dark theme
+- responsive cards/tiles
+- settings tile UI
+- Telegram settings design
+- controller visuals
 
-## Protocol Contract
-- Source of truth: `proto.json`.
-- Device messages must match protocol `version`.
-- Auth model:
-- `hello`: `auth.api_key` required.
-- all next messages: valid `session_id` required.
-- Supports `unit: local|stack` and optional `node_id` for stack/slave routing.
-- UI currently consumes summaries built from:
-- `system`
-- `controllers`
-- `stack`
-- `last_event`
-
-## Data Files (`data/`)
+## Данные
 
 ### `data/users.json`
-```json
-{ "users": [{ "username": "...", "password_hash": "..." }] }
-```
 
-### `data/devices.json`
 ```json
 {
-  "objects": [{ "name": "...", "icon": "house" }],
-  "devices": [
-    {
-      "device_id": 123,
-      "name": "PLC",
-      "api_key": "...",
-      "object_name": "...",
-      "last_seen_ms": 0
-    }
-  ]
+    "users": [
+        {
+            "username": "admin",
+            "password_hash": "...",
+            "plc_username": "",
+            "telegram_username": "",
+            "chat_id": ""
+        }
+    ]
 }
 ```
 
-## Known Constraints and Risks
-- User sessions are in-memory only; restart drops all login sessions.
-- Online device state is in-memory only; restart shows devices offline until new device traffic.
-- Online status depends on TTL (`onlineTtlMs = 30000`) and heartbeat activity.
-- JSON file storage has no transaction/locking layer; concurrent writes can race.
-- No role model, no fine-grained authorization.
-- No built-in rate limiting or CSRF protections.
-- Existing data may contain mojibake object names from older encoding issues.
+### `data/devices.json`
 
-## Extension Guide
-- Add a new controller feature:
-1. Extend `proto.json` types/commands.
-2. Add renderer support in `public/js/ui.js`.
-3. Add actions/events in `public/js/main.js`.
-4. Use existing `send_get/send_cmd` flow through WS servers.
-- Recommended env tunables to introduce:
-- `HOST`, `PORT`
-- `ONLINE_TTL_MS`
-- `PING_INTERVAL_MS`
-- For production hardening:
-- move JSON storage to a DB;
-- persist sessions with TTL;
-- add API/WS rate limiting and audit logging.
+```json
+{
+    "objects": [{ "name": "Квартира", "icon": "apartment" }],
+    "devices": [
+        {
+            "device_id": 123,
+            "name": "PLC",
+            "api_key": "...",
+            "object_name": "Квартира",
+            "last_seen_ms": 0
+        }
+    ]
+}
+```
+
+### `data/telegram.json`
+
+```json
+{
+    "token": "",
+    "public_base_url": "",
+    "webhook_path": "/telegram/webhook",
+    "secret_token": ""
+}
+```
+
+## Docker
+
+Текущие defaults:
+
+- `WEB_PORT=80`
+- `PORT=3001`
+
+Compose публикует:
+
+- `${WEB_HOST_PORT:-80}:80`
+- `${DEVICE_HOST_PORT:-3001}:3001`
+
+## Ограничения и риски
+
+- browser sessions хранятся только в памяти
+- device online state хранится только в памяти
+- JSON storage без locking/transactions
+- long polling Telegram bot предполагает один активный instance на bot token
+- storage Telegram всё ещё содержит legacy webhook-поля
+- ACL зависит от того, прислал ли PLC `authz`; без него система живёт в permissive legacy-режиме
+- локальный `node` на этой машине может быть сломан из-за отсутствующего `icu4c`; для проверок безопаснее Docker `node:20-alpine`
+
+## Рекомендуемый путь расширения
+
+Для нового контроллера:
+
+1. расширить [proto.json](/Users/serg/plc-cloud/proto.json)
+2. обновить PLC firmware contract при необходимости
+3. добавить ACL mapping в [src/auth/AccessControl.js](/Users/serg/plc-cloud/src/auth/AccessControl.js)
+4. добавить browser renderer в [public/js/ui.js](/Users/serg/plc-cloud/public/js/ui.js)
+5. добавить browser actions в [public/js/main.js](/Users/serg/plc-cloud/public/js/main.js)
+6. при необходимости добавить Telegram menu module в [src/bot/menu](/Users/serg/plc-cloud/src/bot/menu)

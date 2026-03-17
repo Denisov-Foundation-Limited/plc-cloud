@@ -1,4 +1,5 @@
 /**********************************************************************/
+
 /*                                                                    */
 /* Programmable Logic Controller Cloud Service                        */
 /*                                                                    */
@@ -9,10 +10,10 @@
 /*                                                                    */
 /**********************************************************************/
 export async function api(path, options = {}) {
-  const res = await fetch(path, { ...options, credentials: 'include' });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || 'request_failed');
-  }
-  return res.json();
+    const res = await fetch(path, { ...options, credentials: "include" });
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "request_failed");
+    }
+    return res.json();
 }

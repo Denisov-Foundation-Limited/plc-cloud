@@ -1,4 +1,5 @@
 /**********************************************************************/
+
 /*                                                                    */
 /* Programmable Logic Controller Cloud Service                        */
 /*                                                                    */
@@ -8,25 +9,31 @@
 /* Email: DenisovFoundationLtd@gmail.com                              */
 /*                                                                    */
 /**********************************************************************/
-import { UsersDb } from '../../db/UsersDb.js';
-import { DevicesDb } from '../../db/DevicesDb.js';
-
 export class DatastoreFactory {
-  constructor({ dataDir, defaultObjects }) {
-    this.dataDir = dataDir;
-    this.defaultObjects = defaultObjects;
-  }
-
-  async build() {
-    const usersDb = new UsersDb({ dataDir: this.dataDir });
-    const devicesDb = new DevicesDb({ dataDir: this.dataDir, defaultObjects: this.defaultObjects });
-
-    await usersDb.init();
-    await devicesDb.init();
-    if (process.env.PLC_CLOUD_SEED_SAMPLE === '1') {
-      await devicesDb.ensureSample();
+    constructor({
+        usersDb,
+        devicesDb,
+        telegramConfigDb,
+        seedSampleEnabled = false,
+    }) {
+        this.usersDb = usersDb;
+        this.devicesDb = devicesDb;
+        this.telegramConfigDb = telegramConfigDb;
+        this.seedSampleEnabled = seedSampleEnabled;
     }
 
-    return { usersDb, devicesDb };
-  }
+    async build() {
+        await this.usersDb.init();
+        await this.devicesDb.init();
+        await this.telegramConfigDb.init();
+        if (this.seedSampleEnabled) {
+            await this.devicesDb.ensureSample();
+        }
+
+        return {
+            usersDb: this.usersDb,
+            devicesDb: this.devicesDb,
+            telegramConfigDb: this.telegramConfigDb,
+        };
+    }
 }

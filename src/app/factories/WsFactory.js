@@ -1,4 +1,5 @@
 /**********************************************************************/
+
 /*                                                                    */
 /* Programmable Logic Controller Cloud Service                        */
 /*                                                                    */
@@ -8,66 +9,78 @@
 /* Email: DenisovFoundationLtd@gmail.com                              */
 /*                                                                    */
 /**********************************************************************/
-import { WebSocketServer } from 'ws';
-import { DeviceWsServer } from '../../ws/DeviceWsServer.js';
-import { WebWsServer } from '../../ws/WebWsServer.js';
-import { rootLogger } from '../../utils/Logger.js';
+import { WebSocketServer } from "ws";
+import { asValue } from "awilix";
+import { rootLogger } from "../../utils/Logger.js";
 
-const logger = rootLogger.child('WS');
+const logger = rootLogger.child("WS");
 
 export class WsFactory {
-  constructor({ server, proto, sessions, devicesDb, registry, onDeviceOnline, onDeviceOffline, onDeviceUpdate }) {
-    this.server = server;
-    this.proto = proto;
-    this.sessions = sessions;
-    this.devicesDb = devicesDb;
-    this.registry = registry;
-    this.onDeviceOnline = onDeviceOnline;
-    this.onDeviceOffline = onDeviceOffline;
-    this.onDeviceUpdate = onDeviceUpdate;
-  }
+    constructor({ container, sessions, devicesDb, registry }) {
+        this.container = container;
+        this.sessions = sessions;
+        this.devicesDb = devicesDb;
+        this.registry = registry;
+    }
 
-  build() {
-    const webWss = new WebSocketServer({ noServer: true });
-    const deviceWss = new WebSocketServer({ noServer: true });
+    build({
+        webServer,
+        deviceServer,
+        proto,
+        onDeviceOnline,
+        onDeviceOffline,
+        onDeviceUpdate,
+    }) {
+        const webWss = new WebSocketServer({ noServer: true });
+        const deviceWss = new WebSocketServer({ noServer: true });
 
-    const webWs = new WebWsServer({
-      wss: webWss,
-      sessions: this.sessions,
-      devicesDb: this.devicesDb,
-      registry: this.registry
-    });
+        const webScope = this.container.createScope();
+        webScope.register({
+            wss: asValue(webWss),
+        });
+        const webWs = webScope.resolve("webWsServer");
 
-    const deviceWs = new DeviceWsServer({
-      wss: deviceWss,
-      proto: this.proto,
-      devicesDb: this.devicesDb,
-      registry: this.registry,
-      onDeviceOnline: this.onDeviceOnline,
-      onDeviceOffline: this.onDeviceOffline,
-      onDeviceUpdate: this.onDeviceUpdate
-    });
+        const deviceScope = this.container.createScope();
+        deviceScope.register({
+            wss: asValue(deviceWss),
+            proto: asValue(proto),
+            onDeviceOnline: asValue(onDeviceOnline),
+            onDeviceOffline: asValue(onDeviceOffline),
+            onDeviceUpdate: asValue(onDeviceUpdate),
+        });
+        const deviceWs = deviceScope.resolve("deviceWsServer");
 
-    webWs.setDeviceWs(deviceWs);
+        webWs.setDeviceWs(deviceWs);
 
-    this.server.on('upgrade', (req, socket, head) => {
-      const { url } = req;
-      if (url.startsWith('/ws/device')) {
-        logger.info(`upgrade device ${req.socket.remoteAddress || 'unknown'}`);
-        deviceWss.handleUpgrade(req, socket, head, ws => deviceWss.emit('connection', ws, req));
-        return;
-      }
-      if (url.startsWith('/ws/web')) {
-        logger.info(`upgrade web ${req.socket.remoteAddress || 'unknown'}`);
-        webWss.handleUpgrade(req, socket, head, ws => webWss.emit('connection', ws, req));
-        return;
-      }
-      socket.destroy();
-    });
+        webServer.on("upgrade", (req, socket, head) => {
+            const { url = "" } = req;
+            if (!url.startsWith("/ws/web")) {
+                socket.destroy();
+                return;
+            }
+            logger.info(`upgrade web ${req.socket.remoteAddress || "unknown"}`);
+            webWss.handleUpgrade(req, socket, head, (ws) =>
+                webWss.emit("connection", ws, req),
+            );
+        });
 
-    webWs.init();
-    deviceWs.init();
+        deviceServer.on("upgrade", (req, socket, head) => {
+            const { url = "" } = req;
+            if (!url.startsWith("/ws/device")) {
+                socket.destroy();
+                return;
+            }
+            logger.info(
+                `upgrade device ${req.socket.remoteAddress || "unknown"}`,
+            );
+            deviceWss.handleUpgrade(req, socket, head, (ws) =>
+                deviceWss.emit("connection", ws, req),
+            );
+        });
 
-    return { webWs, deviceWs, webWss, deviceWss };
-  }
+        webWs.init();
+        deviceWs.init();
+
+        return { webWs, deviceWs, webWss, deviceWss };
+    }
 }

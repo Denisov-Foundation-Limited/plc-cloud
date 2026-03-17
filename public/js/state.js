@@ -1,4 +1,5 @@
 /**********************************************************************/
+
 /*                                                                    */
 /* Programmable Logic Controller Cloud Service                        */
 /*                                                                    */
@@ -9,14 +10,14 @@
 /*                                                                    */
 /**********************************************************************/
 export const state = {
-  ws: null,
-  objects: [],
-  currentObject: null,
-  devicesRaw: [],
-  devices: [],
-  currentDevice: null,
-  currentDeviceData: null,
-  currentUnit: 'local',
-  currentNodeId: null,
-  targetByDevice: {}
+    ws: null,
+    objects: [],
+    currentObject: null,
+    devicesRaw: [],
+    devices: [],
+    currentDevice: null,
+    currentDeviceData: null,
+    currentUnit: "local",
+    currentNodeId: null,
+    targetByDevice: {},
 };
