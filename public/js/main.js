@@ -28,6 +28,8 @@ let lastLightPollSentMs = 0;
 const TARGET_STORE_KEY = "plc_cloud_target_by_device";
 const tilePendingTimers = new WeakMap();
 const buttonPendingTimers = new WeakMap();
+const lastEventSignatureByScope = new Map();
+let eventToastHost = null;
 
 function setActionButtonsDisabled(root, disabled) {
     if (!root) return;
@@ -116,6 +118,191 @@ function saveTargets() {
     } catch (err) {
         // ignore storage errors
     }
+}
+
+function currentScopeKey(detail = null) {
+    const deviceId = Number(detail?.device_id || state.currentDevice?.device_id || 0);
+    const unit = state.currentUnit === "stack" ? "stack" : "local";
+    const nodeId = unit === "stack" ? Number(state.currentNodeId || 0) : 0;
+    return `${deviceId}:${unit}:${nodeId}`;
+}
+
+function eventSignature(eventPayload) {
+    if (!eventPayload || typeof eventPayload !== "object") return "";
+    return JSON.stringify({
+        kind: eventPayload.kind || "",
+        reason: eventPayload.reason || "",
+        unit: eventPayload.unit || "",
+        node_id: eventPayload.node_id || 0,
+        data: eventPayload.data || null,
+        ts: eventPayload.ts || eventPayload.time || "",
+    });
+}
+
+function ensureEventToastHost() {
+    if (eventToastHost && document.body.contains(eventToastHost)) return eventToastHost;
+    eventToastHost = document.createElement("div");
+    eventToastHost.id = "event-toast-host";
+    eventToastHost.style.cssText =
+        "position:fixed;right:16px;top:16px;display:flex;flex-direction:column;gap:8px;z-index:9999;pointer-events:none;max-width:min(420px,calc(100vw - 32px));";
+    document.body.appendChild(eventToastHost);
+    return eventToastHost;
+}
+
+function buildEventToastText(detail) {
+    const eventPayload = detail?.last_event;
+    if (!eventPayload || typeof eventPayload !== "object") return "";
+    const data =
+        eventPayload.data && typeof eventPayload.data === "object"
+            ? eventPayload.data
+            : {};
+    const reason = String(eventPayload.reason || "").trim();
+    const kind = String(eventPayload.kind || "event").trim() || "event";
+    const deviceName = String(detail?.name || `#${Number(detail?.device_id || 0)}`).trim();
+    const objectName = String(detail?.object_name || "").trim();
+    const sourceName = String(data.source_name || data.unit_name || "").trim();
+    const itemName = String(data.name || "").trim();
+
+    let title = "";
+
+    if (kind === "sockets.state" || kind === "lights.state") {
+        const item = itemName || (kind === "lights.state" ? "Свет" : "Розетка");
+        const state = data.state ? "включен" : "выключен";
+        const icon = kind === "lights.state" ? (data.state ? "💡" : "⚪") : "🔌";
+        title = `${icon} ${item} ${state}`;
+    } else if (kind === "meteo.sensor") {
+        const item = itemName || "Датчик";
+        title =
+            reason === "alarm"
+                ? `⚠️ Ошибка датчика ${item}`
+                : `✅ Датчик ${item} восстановлен`;
+    } else if (kind === "thermo.power") {
+        const item = itemName || "Термостат";
+        title = `${data.power_on ? "🌡️" : "⏹️"} Термостат ${item} ${data.power_on ? "включен" : "выключен"}`;
+    } else if (kind === "tanks.level") {
+        const item = itemName || "Бак";
+        title =
+            reason === "empty" || data.empty
+                ? `🛢 Бак ${item} пуст`
+                : `🛢 Состояние бака ${item} изменилось`;
+    } else if (kind === "septic.level") {
+        const item = itemName || "Септик";
+        title =
+            reason === "alarm" || data.alarm
+                ? `🚨 Тревога септика ${item}`
+                : `🚰 Предупреждение септика ${item}`;
+    } else if (kind === "security.arm") {
+        title = `${data.armed ? "🔐" : "🔓"} Охрана ${data.armed ? "включена" : "снята"}`;
+    } else if (kind === "security.alarm") {
+        title =
+            reason === "alarm" || data.alarm_on
+                ? "🚨 Охранная тревога"
+                : "✅ Охранная тревога сброшена";
+    } else if (kind === "security.detect") {
+        const item = itemName || "Датчик";
+        if (reason === "clear") {
+            title = "✅ Сработки охраны очищены";
+        } else if (reason === "silent" || data.silent) {
+            title = `🕵️ Тихое срабатывание ${item}`;
+        } else {
+            title = `🚨 Сработка охраны: ${item}`;
+        }
+    } else if (kind === "watering.rule") {
+        const item = itemName || "Правило";
+        const actions = {
+            start: "запущен",
+            pause_empty: "на паузе из-за пустого бака",
+            resume: "возобновлен",
+            stop: "остановлен",
+            stop_empty: "остановлен из-за пустого бака",
+            stop_done: "завершён",
+        };
+        const icon =
+            reason === "start" ? "💧"
+            : reason === "resume" ? "▶️"
+            : reason === "pause_empty" ? "⏸️"
+            : reason === "stop_done" ? "✅"
+            : reason === "stop_empty" ? "🛑"
+            : "🚿";
+        title = `${icon} Полив ${item} ${actions[reason] || "изменился"}`;
+    } else if (kind === "ring.hold") {
+        title = `${reason === "start" || data.hold_on ? "🔔" : "🔕"} Звонок ${reason === "start" || data.hold_on ? "включен" : "выключен"}`;
+    } else if (kind === "avr.main") {
+        title =
+            reason === "lost"
+                ? "🔴 Основной ввод пропал"
+                : reason === "restored"
+                  ? "🟢 Основной ввод восстановлен"
+                  : "⚙️ Состояние основного ввода изменилось";
+    } else if (kind === "avr.source") {
+        const source = String(data.active_source || "").trim();
+        title = source
+            ? `🔀 АВР переключен на ${source}`
+            : "🔀 АВР переключил источник";
+    } else if (kind === "avr.fault") {
+        const fault = String(data.fault || "").trim();
+        title = fault && fault !== "none"
+            ? `🚨 Ошибка АВР: ${fault}`
+            : "✅ Ошибка АВР очищена";
+    } else if (kind === "leak.zone") {
+        const item = itemName || "Зона";
+        title =
+            reason === "detect" || data.wet
+                ? `💦 Протечка: ${item}`
+                : `✅ Протечка подтверждена: ${item}`;
+    } else if (kind === "rules.trigger") {
+        const ruleName = String(data.rule_name || "").trim();
+        title = ruleName
+            ? `📜 Сработало правило ${ruleName}`
+            : "📜 Сработало правило";
+    } else if (kind === "stack.node") {
+        const unitName = String(data.unit_name || "").trim();
+        title = `${data.online ? "🟢" : "⚪"} Узел ${unitName || sourceName || "stack"} ${data.online ? "онлайн" : "оффлайн"}`;
+    }
+
+    const pieces = [];
+    if (title) pieces.push(title);
+    if (sourceName) pieces.push(sourceName);
+    if (deviceName) pieces.push(deviceName);
+    if (objectName) pieces.push(objectName);
+    if (!title) {
+        pieces.push(kind);
+        if (reason) pieces.push(reason);
+        if (itemName) pieces.push(itemName);
+    }
+    return pieces.filter(Boolean).join(" · ");
+}
+
+function showEventToast(text) {
+    if (!text) return;
+    const host = ensureEventToastHost();
+    const toast = document.createElement("div");
+    toast.textContent = text;
+    toast.style.cssText =
+        "background:rgba(12,18,32,.96);color:#fff;border:1px solid rgba(148,163,184,.28);border-radius:14px;padding:12px 14px;box-shadow:0 12px 36px rgba(15,23,42,.24);font:500 14px/1.35 system-ui,sans-serif;opacity:0;transform:translateY(-6px);transition:opacity .18s ease, transform .18s ease;";
+    host.appendChild(toast);
+    requestAnimationFrame(() => {
+        toast.style.opacity = "1";
+        toast.style.transform = "translateY(0)";
+    });
+    setTimeout(() => {
+        toast.style.opacity = "0";
+        toast.style.transform = "translateY(-4px)";
+        setTimeout(() => toast.remove(), 220);
+    }, 3600);
+}
+
+function maybeShowEventToast(detail) {
+    const eventPayload = detail?.last_event;
+    if (!eventPayload || typeof eventPayload !== "object") return;
+    const reason = String(eventPayload.reason || "").trim().toLowerCase();
+    if (reason === "periodic") return;
+    const key = currentScopeKey(detail);
+    const signature = eventSignature(eventPayload);
+    const previous = lastEventSignatureByScope.get(key);
+    lastEventSignatureByScope.set(key, signature);
+    if (!signature || !previous || previous === signature) return;
+    showEventToast(buildEventToastText(detail));
 }
 
 function setCurrentTarget(unit, nodeId = null) {
@@ -373,8 +560,11 @@ async function loadAdminDevices() {
 
 async function loadAdminUsers() {
     const data = await api("/api/admin/users");
+    ui.renderUserObjectSelector(data.objects || [], []);
     ui.renderAdminUsers(
         data.users || [],
+        data.objects || [],
+        data.notification_catalog || [],
         async (user, patch) => {
             try {
                 await api(
@@ -391,6 +581,25 @@ async function loadAdminUsers() {
                                 patch?.telegram_username || "",
                             ).trim(),
                             chat_id: String(patch?.chat_id || "").trim(),
+                            telegram_notify_online: Boolean(
+                                patch?.telegram_notify_online,
+                            ),
+                            telegram_notify_offline: Boolean(
+                                patch?.telegram_notify_offline,
+                            ),
+                            telegram_notify_events: Boolean(
+                                patch?.telegram_notify_events,
+                            ),
+                            notification_prefs: Array.isArray(
+                                patch?.notification_prefs,
+                            )
+                                ? patch.notification_prefs
+                                : [],
+                            allowed_objects: Array.isArray(
+                                patch?.allowed_objects,
+                            )
+                                ? patch.allowed_objects
+                                : [],
                             ...(String(patch?.password || "")
                                 ? { password: String(patch.password) }
                                 : {}),
@@ -804,11 +1013,27 @@ ui.userForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const formData = new FormData(ui.userForm);
     const payload = Object.fromEntries(formData.entries());
+    const allowedObjects = Array.from(
+        ui.userAllowedObjects?.querySelectorAll('input[name="allowed_objects"]:checked') || [],
+    )
+        .map((input) => String(input.value || "").trim())
+        .filter(Boolean);
+    const toBool = (value) =>
+        value === true ||
+        String(value || "")
+            .trim()
+            .toLowerCase() === "on";
     try {
         await api("/api/admin/users", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({
+                ...payload,
+                allowed_objects: allowedObjects,
+                telegram_notify_online: toBool(payload.telegram_notify_online),
+                telegram_notify_offline: toBool(payload.telegram_notify_offline),
+                telegram_notify_events: toBool(payload.telegram_notify_events),
+            }),
         });
         ui.userForm.reset();
         await loadAdminUsers();
@@ -998,10 +1223,91 @@ ui.deviceWateringGrid?.addEventListener("click", (e) => {
     if (tile.classList.contains("disabled")) return;
     const id = Number(tile.dataset.wateringId);
     if (!Number.isFinite(id)) return;
-    if (actionEl.dataset.action !== "status-toggle") return;
-    const status = tile.dataset.status === "1";
+    const action = actionEl.dataset.action;
     markTilePending(tile);
-    sendCmd("watering", "status", { id, state: status ? "off" : "on" });
+    if (action === "status-toggle") {
+        const status = tile.dataset.status === "1";
+        sendCmd("watering", "status", { id, state: status ? "off" : "on" });
+    } else if (action === "weekday-toggle") {
+        const bit = Number(actionEl.dataset.bit);
+        if (!Number.isFinite(bit)) return;
+        const currentMask = Number(tile.dataset.weekdaysMask || 0) & 0x7f;
+        const nextMask = currentMask ^ (1 << bit);
+        sendCmd("watering", "weekdays", { id, weekdays_mask: nextMask });
+    } else if (action === "slot-duration-step") {
+        const slotEl = actionEl.closest("[data-watering-slot]");
+        const slot = Number(actionEl.dataset.slot || slotEl?.dataset.wateringSlot);
+        if (!Number.isFinite(slot)) return;
+        const input = slotEl?.querySelector(".watering-duration-input");
+        if (!input) return;
+        const nextValue = Math.max(
+            0,
+            Number(input.value || 0) + Number(actionEl.dataset.durationDelta || 0),
+        );
+        input.value = String(nextValue);
+        clearTilePending(tile);
+        return;
+    } else if (action === "slot-save") {
+        const slotEl = actionEl.closest("[data-watering-slot]");
+        const slot = Number(actionEl.dataset.slot || slotEl?.dataset.wateringSlot);
+        if (!Number.isFinite(slot)) return;
+        const timeInput = slotEl?.querySelector(".watering-time-input");
+        const durationInput = slotEl?.querySelector(".watering-duration-input");
+        const rawTime = String(timeInput?.value || "").trim();
+        const match = rawTime.match(/^(\d{2}):(\d{2})$/);
+        if (!match) return;
+        const hour = Number(match[1]);
+        const minute = Number(match[2]);
+        const durationMinutes = Math.max(0, Number(durationInput?.value || 0));
+        if (
+            !Number.isFinite(hour) ||
+            !Number.isFinite(minute) ||
+            hour < 0 ||
+            hour > 23 ||
+            minute < 0 ||
+            minute > 59 ||
+            !Number.isFinite(durationMinutes)
+        ) {
+            return;
+        }
+        sendCmd("watering", "time", {
+            id,
+            slot,
+            hour,
+            minute,
+        });
+        sendCmd("watering", "duration", {
+            id,
+            slot,
+            duration_s: Math.round(durationMinutes * 60),
+        });
+    } else if (action === "slot-copy") {
+        const slotEl = actionEl.closest("[data-watering-slot]");
+        const sourceSlot = Number(
+            actionEl.dataset.slot || slotEl?.dataset.wateringSlot,
+        );
+        const targetSlot = Number(actionEl.dataset.targetSlot);
+        if (!Number.isFinite(sourceSlot) || !Number.isFinite(targetSlot)) return;
+        const sourceHour = Number(slotEl?.dataset.hour || 0);
+        const sourceMinute = Number(slotEl?.dataset.minute || 0);
+        const sourceDurationS = Math.max(
+            0,
+            Number(slotEl?.dataset.durationS || 0),
+        );
+        sendCmd("watering", "time", {
+            id,
+            slot: targetSlot,
+            hour: sourceHour,
+            minute: sourceMinute,
+        });
+        sendCmd("watering", "duration", {
+            id,
+            slot: targetSlot,
+            duration_s: sourceDurationS,
+        });
+    } else {
+        return;
+    }
     setTimeout(() => requestDeviceSnapshot({ loading: false }), 500);
     setTimeout(() => requestDeviceSnapshot({ loading: false }), 1500);
 });
@@ -1478,6 +1784,7 @@ function handleWsMessage(msg) {
         );
         renderTargetPicker(state.currentDeviceData);
         const scopedDetail = resolveScopedDetail(state.currentDeviceData);
+        maybeShowEventToast(scopedDetail);
         ui.renderDevice(scopedDetail);
         ui.renderSockets(scopedDetail);
         ui.renderLights(scopedDetail);

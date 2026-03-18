@@ -74,9 +74,19 @@ export class DeviceWsServer {
                 try {
                     await this.handleMessage(ws, msg);
                 } catch (err) {
+                    const details = {
+                        type: msg?.type || "-",
+                        id: msg?.id || "-",
+                        reply_to: msg?.reply_to || "-",
+                        session_id: msg?.session_id || "-",
+                        device_id: this.registry.getDeviceIdBySocket(ws) || "-",
+                    };
                     logger.error(
-                        `handle message failed: ${err?.message || "unknown_error"}`,
+                        `handle message failed: type=${details.type} id=${details.id} reply_to=${details.reply_to} session=${details.session_id} device=${details.device_id} error=${err?.message || "unknown_error"}`,
                     );
+                    if (err?.stack) {
+                        logger.error(err.stack);
+                    }
                     this.send(ws, {
                         v: this.proto.version,
                         type: "error",
@@ -258,14 +268,21 @@ export class DeviceWsServer {
                     : null;
                 const scopeUnit = message.unit || pendingScope?.unit;
                 const scopeNodeId = message.node_id ?? pendingScope?.node_id;
-                this.registry.registerState(
-                    deviceId,
-                    { ...data },
-                    {
-                        unit: scopeUnit,
-                        node_id: scopeNodeId,
-                    },
-                );
+                try {
+                    this.registry.registerState(
+                        deviceId,
+                        { ...data },
+                        {
+                            unit: scopeUnit,
+                            node_id: scopeNodeId,
+                        },
+                    );
+                } catch (err) {
+                    logger.error(
+                        `registerState failed: type=${message.type} reply_to=${message.reply_to || "-"} unit=${scopeUnit || "-"} node_id=${scopeNodeId ?? "-"} error=${err?.message || "unknown_error"}`,
+                    );
+                    throw err;
+                }
             }
             if (message.reply_to) {
                 this.pendingScopes.delete(String(message.reply_to));
@@ -273,24 +290,71 @@ export class DeviceWsServer {
         }
 
         if (message.type === "event") {
-            const patch = { last_event: message.payload || null };
-            const eventData = message.payload?.data;
-            if (eventData && typeof eventData === "object") {
+            const scopeUnit = message.unit || null;
+            const scopeNodeId =
+                message.node_id !== undefined && message.node_id !== null
+                    ? Number(message.node_id)
+                    : null;
+            const eventPayload =
+                message.payload && typeof message.payload === "object"
+                    ? {
+                          ...message.payload,
+                          ...(scopeUnit ? { unit: scopeUnit } : {}),
+                          ...(scopeNodeId ? { node_id: scopeNodeId } : {}),
+                      }
+                    : null;
+            const patch = { last_event: eventPayload };
+            const eventData = eventPayload?.data;
+            if (
+                (!scopeUnit || scopeUnit === "local") &&
+                eventData &&
+                typeof eventData === "object"
+            ) {
                 Object.assign(patch, eventData);
             }
-            this.registry.registerState(deviceId, patch);
+            try {
+                if (scopeUnit && scopeUnit === "stack" && scopeNodeId) {
+                    this.registry.registerState(deviceId, patch, {
+                        unit: scopeUnit,
+                        node_id: scopeNodeId,
+                    });
+                    this.registry.registerState(deviceId, patch);
+                } else {
+                    this.registry.registerState(deviceId, patch);
+                }
+            } catch (err) {
+                logger.error(
+                    `registerState failed: type=event kind=${message.payload?.kind || "-"} reason=${message.payload?.reason || "-"} unit=${scopeUnit || "-"} node_id=${scopeNodeId ?? "-"} error=${err?.message || "unknown_error"}`,
+                );
+                throw err;
+            }
         }
 
         if (message.type === "pong") {
             return;
         }
 
-        const summary = await this.registry.buildSummary(
-            deviceId,
-            this.devicesDb,
-        );
+        let summary = null;
+        try {
+            summary = await this.registry.buildSummary(
+                deviceId,
+                this.devicesDb,
+            );
+        } catch (err) {
+            logger.error(
+                `buildSummary failed: device=${deviceId} type=${message.type} error=${err?.message || "unknown_error"}`,
+            );
+            throw err;
+        }
         if (summary && this.onDeviceUpdate) {
-            this.onDeviceUpdate(summary);
+            try {
+                this.onDeviceUpdate(summary);
+            } catch (err) {
+                logger.error(
+                    `onDeviceUpdate failed: device=${deviceId} type=${message.type} error=${err?.message || "unknown_error"}`,
+                );
+                throw err;
+            }
         }
     }
 

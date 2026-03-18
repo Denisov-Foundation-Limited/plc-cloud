@@ -140,10 +140,7 @@ export class DeviceRegistry {
                   }
                 : prevSystem || null;
             const mergedControllers = patchControllers
-                ? {
-                      ...(prevControllers || {}),
-                      ...patchControllers,
-                  }
+                ? this.mergeControllers_(prevControllers, patchControllers)
                 : prevControllers || null;
             stackUnits[key] = {
                 ...prev,
@@ -162,7 +159,68 @@ export class DeviceRegistry {
         session.state = {
             ...session.state,
             ...patch,
+            controllers: this.mergeControllers_(
+                session.state?.controllers,
+                patch.controllers,
+            ),
         };
+    }
+
+    mergeControllers_(prevControllers, patchControllers) {
+        const prev =
+            prevControllers && typeof prevControllers === "object"
+                ? prevControllers
+                : null;
+        const patch =
+            patchControllers && typeof patchControllers === "object"
+                ? patchControllers
+                : null;
+        if (!patch) return prev || null;
+        const merged = { ...(prev || {}), ...patch };
+        for (const [key, patchValue] of Object.entries(patch)) {
+            const prevValue = prev?.[key];
+            if (Array.isArray(prevValue) && Array.isArray(patchValue)) {
+                merged[key] = this.mergeControllerArray_(prevValue, patchValue);
+                continue;
+            }
+            if (
+                prevValue &&
+                typeof prevValue === "object" &&
+                !Array.isArray(prevValue) &&
+                patchValue &&
+                typeof patchValue === "object" &&
+                !Array.isArray(patchValue)
+            ) {
+                merged[key] = { ...prevValue, ...patchValue };
+            }
+        }
+        return merged;
+    }
+
+    mergeControllerArray_(prevList, patchList) {
+        const prev = Array.isArray(prevList) ? prevList : [];
+        const patch = Array.isArray(patchList) ? patchList : [];
+        if (!prev.length || !patch.length) return patch;
+        const merged = [...prev];
+        const indexById = new Map();
+        for (let i = 0; i < prev.length; i += 1) {
+            const id = Number(prev[i]?.id);
+            if (Number.isFinite(id)) indexById.set(id, i);
+        }
+        let mergedAny = false;
+        for (const item of patch) {
+            const id = Number(item?.id);
+            if (!Number.isFinite(id) || !indexById.has(id)) {
+                return patch;
+            }
+            const idx = indexById.get(id);
+            merged[idx] = {
+                ...prev[idx],
+                ...item,
+            };
+            mergedAny = true;
+        }
+        return mergedAny ? merged : patch;
     }
 
     async buildSummary(deviceId, devicesDb) {

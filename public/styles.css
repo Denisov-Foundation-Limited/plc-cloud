@@ -894,6 +894,31 @@ pre {
     line-height: 1.55;
 }
 
+.telegram-info-meta-secondary {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(51, 65, 85, 0.72);
+}
+
+.telegram-copy-input {
+    width: 100%;
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    background: rgba(7, 13, 24, 0.88);
+    color: #edf6ff;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.telegram-copy-input:focus {
+    outline: none;
+    border-color: rgba(56, 189, 248, 0.55);
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
+}
+
 .admin-row {
     border: 1px solid var(--border);
     border-radius: 12px;
@@ -998,6 +1023,116 @@ pre {
     min-width: 0;
 }
 
+.admin-user-fields .admin-edit-field-wide {
+    grid-column: 1 / -1;
+}
+
+.admin-notify-groups {
+    gap: 12px;
+}
+
+.admin-notify-basic-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-notify-basic {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(51, 65, 85, 0.72);
+    background: rgba(11, 18, 32, 0.62);
+    cursor: pointer;
+}
+
+.admin-notify-basic input {
+    margin: 0;
+    width: 16px;
+    height: 16px;
+    accent-color: #38bdf8;
+}
+
+.admin-notify-basic-body {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+.admin-notify-basic-title {
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.15;
+}
+
+.admin-notify-basic-text {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+.admin-notify-basic:has(input:checked) {
+    border-color: rgba(56, 189, 248, 0.38);
+    background: rgba(9, 28, 44, 0.72);
+}
+
+.admin-notify-groups-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-notify-group {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 16px;
+    border: 1px solid rgba(51, 65, 85, 0.78);
+    background: rgba(10, 16, 28, 0.72);
+}
+
+.admin-notify-group-title {
+    color: #dbe7f3;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.admin-notify-check-grid,
+.admin-check-chip-grid {
+    display: grid;
+    gap: 8px;
+}
+
+.admin-notify-check,
+.admin-check-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 28px;
+    cursor: pointer;
+}
+
+.admin-notify-check input,
+.admin-check-chip input {
+    margin: 0;
+    width: 15px;
+    height: 15px;
+    accent-color: #38bdf8;
+}
+
+.admin-notify-check span,
+.admin-check-chip span {
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.2;
+    color: #c8d4e3;
+}
+
 .admin-user-card-actions {
     display: flex;
     gap: 10px;
@@ -1030,6 +1165,11 @@ pre {
     }
 
     .admin-user-fields {
+        grid-template-columns: 1fr;
+    }
+
+    .admin-notify-basic-grid,
+    .admin-notify-groups-grid {
         grid-template-columns: 1fr;
     }
 
@@ -1303,13 +1443,13 @@ pre {
 
 .sockets-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 12px;
 }
 
 .lights-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 12px;
 }
 
@@ -1350,9 +1490,9 @@ pre {
 
 .socket-tile {
     display: grid;
-    grid-template-columns: 140px minmax(0, 1fr);
-    gap: 12px;
-    padding: 14px;
+    grid-template-columns: 116px minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
     border-radius: 12px;
     border: 1px solid var(--border);
     background: #0b1220;
@@ -1360,9 +1500,9 @@ pre {
 
 .light-tile {
     display: grid;
-    grid-template-columns: 140px minmax(0, 1fr);
-    gap: 12px;
-    padding: 14px;
+    grid-template-columns: 116px minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
     border-radius: 12px;
     border: 1px solid var(--border);
     background: #0b1220;
@@ -2478,6 +2618,17 @@ button.btn-off:hover:not(:disabled),
     margin-top: 2px;
 }
 
+.thermo-card {
+    background:
+        radial-gradient(
+            circle at top right,
+            rgba(56, 189, 248, 0.08),
+            transparent 34%
+        ),
+        linear-gradient(180deg, #0f172a 0%, #0b1220 100%);
+    border-color: rgba(51, 65, 85, 0.86);
+}
+
 .thermo-left {
     display: flex;
     flex-direction: column;
@@ -2543,12 +2694,177 @@ button.btn-off:hover:not(:disabled),
 .temp-pill .temp-value {
     font-weight: 700;
     color: #38bdf8;
+    font-size: 16px;
+    line-height: 1;
 }
 .temp-pill.sensor {
     top: 10px;
 }
 .temp-pill.target {
     bottom: 10px;
+}
+
+.thermo-temp-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.thermo-status-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.thermo-mode-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 28px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid rgba(71, 85, 105, 0.44);
+    background: rgba(15, 23, 42, 0.72);
+    color: #cbd5e1;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.thermo-mode-pill.is-active {
+    border-color: rgba(56, 189, 248, 0.42);
+    background: rgba(8, 34, 55, 0.62);
+    color: #d8f3ff;
+}
+
+.thermo-mode-pill.is-off {
+    color: #94a3b8;
+}
+
+.thermo-mode-icon {
+    font-size: 13px;
+    line-height: 1;
+}
+
+.thermo-indicators {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.thermo-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 40px;
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(51, 65, 85, 0.9);
+    background: rgba(15, 23, 42, 0.74);
+    color: #cbd5e1;
+}
+
+.thermo-indicator-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: currentColor;
+    box-shadow: 0 0 0 5px rgba(255, 255, 255, 0.04);
+    flex: 0 0 auto;
+}
+
+.thermo-indicator-label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+}
+
+.thermo-indicator.is-active {
+    color: #86efac;
+    border-color: rgba(74, 222, 128, 0.38);
+    background: rgba(8, 42, 25, 0.55);
+}
+
+.thermo-indicator.is-hot {
+    color: #fdba74;
+    border-color: rgba(249, 115, 22, 0.42);
+    background: rgba(76, 31, 10, 0.56);
+}
+
+.thermo-indicator.is-cool {
+    color: #7dd3fc;
+    border-color: rgba(56, 189, 248, 0.42);
+    background: rgba(8, 34, 55, 0.6);
+}
+
+.thermo-indicator.is-ready {
+    color: #dbeafe;
+    border-color: rgba(96, 165, 250, 0.36);
+    background: rgba(16, 24, 40, 0.78);
+}
+
+.thermo-indicator.is-disabled,
+.thermo-indicator.is-idle {
+    color: #94a3b8;
+}
+
+.thermo-meta-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.thermo-actions-grid {
+    display: grid;
+    gap: 10px;
+}
+
+.thermo-power-btn,
+.thermo-mode-btn {
+    min-height: 38px;
+    justify-content: center;
+}
+
+.thermo-adjust-group {
+    display: grid;
+    grid-template-columns: minmax(76px, 0.85fr) minmax(0, 1.2fr) minmax(
+            76px,
+            0.85fr
+        );
+    gap: 8px;
+}
+
+.thermo-target-chip {
+    display: grid;
+    place-items: center;
+    gap: 2px;
+    min-height: 38px;
+    padding: 8px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(56, 189, 248, 0.22);
+    background: rgba(8, 34, 55, 0.56);
+    text-align: center;
+}
+
+.thermo-target-label {
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1;
+}
+
+.thermo-target-value {
+    color: #e0f2fe;
+    font-size: 17px;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.thermo-step-btn {
+    min-height: 38px;
+    padding-inline: 0;
+    font-size: 13px;
+    justify-content: center;
 }
 
 .status-heat {
@@ -2647,6 +2963,194 @@ button.btn-off:hover:not(:disabled),
     transition: 0.2s;
 }
 
+.watering-schedule-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.watering-summary-chip {
+    display: grid;
+    gap: 4px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid #243041;
+    background: rgba(15, 23, 42, 0.72);
+}
+
+.watering-summary-chip-wide {
+    grid-column: span 2;
+}
+
+.watering-weekdays {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.weekday-toggle {
+    min-width: 64px;
+    padding: 8px 10px;
+    border-radius: 999px;
+    border: 1px solid #334155;
+    background: rgba(15, 23, 42, 0.92);
+    color: #cbd5e1;
+    font: inherit;
+    cursor: pointer;
+    transition:
+        border-color 0.18s ease,
+        background 0.18s ease,
+        color 0.18s ease,
+        transform 0.18s ease;
+}
+
+.weekday-toggle.is-active {
+    border-color: rgba(56, 189, 248, 0.8);
+    background: rgba(8, 145, 178, 0.18);
+    color: #e0f2fe;
+}
+
+.watering-slots {
+    display: grid;
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.watering-slot-card {
+    display: grid;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid #243041;
+    background:
+        linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(12, 18, 32, 0.96));
+}
+
+.watering-slot-card.is-configured {
+    border-color: rgba(56, 189, 248, 0.45);
+    background:
+        linear-gradient(180deg, rgba(18, 39, 63, 0.92), rgba(12, 24, 38, 0.98));
+    box-shadow:
+        inset 0 1px 0 rgba(125, 211, 252, 0.08),
+        0 10px 28px rgba(2, 132, 199, 0.12);
+}
+
+.watering-slot-editor {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    align-items: start;
+}
+
+.watering-slot-time {
+    display: grid;
+    gap: 6px;
+}
+
+.watering-slot-duration {
+    display: grid;
+    gap: 6px;
+}
+
+.watering-slot-caption {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.watering-slot-state {
+    justify-self: start;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid #334155;
+    color: #94a3b8;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(15, 23, 42, 0.78);
+}
+
+.watering-slot-card.is-configured .watering-slot-state {
+    border-color: rgba(56, 189, 248, 0.45);
+    color: #dbeafe;
+    background: rgba(8, 145, 178, 0.16);
+}
+
+.watering-time-input {
+    min-height: 40px;
+    border-radius: 10px;
+    border: 1px solid #334155;
+    background: rgba(15, 23, 42, 0.92);
+    color: #e5e7eb;
+    padding: 0 12px;
+    font: inherit;
+}
+
+.watering-duration-editor {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+    gap: 8px;
+    align-items: center;
+}
+
+.watering-duration-input {
+    min-height: 40px;
+    border-radius: 10px;
+    border: 1px solid #334155;
+    background: rgba(15, 23, 42, 0.92);
+    color: #e5e7eb;
+    padding: 0 12px;
+    font: inherit;
+    text-align: center;
+}
+
+.watering-slot-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.watering-save-btn {
+    min-width: 156px;
+}
+
+.watering-slot-copy-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.watering-copy-btn {
+    min-width: 96px;
+}
+
+.watering-slot-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.watering-slot-title {
+    color: #e5e7eb;
+    font-weight: 700;
+}
+
+.watering-slot-value {
+    color: #93c5fd;
+    font-weight: 700;
+    text-align: right;
+}
+
+.watering-slot-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.watering-slot-controls .btn-sm {
+    min-height: 38px;
+}
+
 .watering-item[data-active="1"] .watering-icon {
     opacity: 1;
     filter: none;
@@ -2717,6 +3221,133 @@ button.btn-off:hover:not(:disabled),
     .tank-icon.on,
     .tank-icon.alert {
         animation: none !important;
+    }
+}
+
+@media (max-width: 980px) {
+    .watering-grid .tile {
+        padding: 14px;
+    }
+
+    .watering-item {
+        gap: 14px;
+    }
+
+    .watering-item .watering-visual {
+        min-height: 136px;
+        padding: 8px;
+    }
+
+    .watering-item .watering-icon {
+        width: 84px;
+        height: 84px;
+    }
+
+    .watering-schedule-summary {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    .watering-summary-chip-wide {
+        grid-column: span 1;
+    }
+
+    .watering-summary-chip {
+        padding: 9px 10px;
+    }
+
+    .watering-weekdays {
+        gap: 6px;
+    }
+
+    .weekday-toggle {
+        min-width: 54px;
+        padding: 7px 8px;
+        font-size: 12px;
+    }
+
+    .watering-slots {
+        gap: 10px;
+    }
+
+    .watering-slot-card {
+        gap: 8px;
+        padding: 10px;
+    }
+
+    .watering-slot-editor {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .watering-slot-head {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .watering-slot-value {
+        text-align: left;
+        font-size: 13px;
+    }
+
+    .watering-duration-editor {
+        grid-template-columns: 40px minmax(0, 1fr) 40px;
+        gap: 6px;
+    }
+
+    .watering-time-input,
+    .watering-duration-input {
+        min-height: 38px;
+    }
+
+    .watering-slot-actions {
+        justify-content: stretch;
+    }
+
+    .watering-save-btn {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .watering-slot-copy-row {
+        gap: 6px;
+    }
+
+    .watering-copy-btn {
+        min-width: 0;
+        flex: 1 1 calc(50% - 6px);
+    }
+}
+
+@media (max-width: 640px) {
+    .watering-grid .tile {
+        padding: 12px;
+    }
+
+    .watering-item {
+        gap: 12px;
+    }
+
+    .watering-slot-card {
+        padding: 9px;
+        border-radius: 12px;
+    }
+
+    .watering-slot-title {
+        font-size: 14px;
+    }
+
+    .watering-slot-caption,
+    .watering-slot-state {
+        font-size: 11px;
+    }
+
+    .watering-save-btn,
+    .watering-copy-btn,
+    .watering-duration-step {
+        min-height: 36px;
+        padding-inline: 10px;
     }
 }
 
@@ -2918,6 +3549,12 @@ button.btn-off:hover:not(:disabled),
     .thermo-visual,
     .septic-visual {
         height: 220px;
+    }
+
+    .thermo-temp-summary,
+    .thermo-indicators,
+    .thermo-adjust-group {
+        grid-template-columns: 1fr;
     }
 
     .status-grid {

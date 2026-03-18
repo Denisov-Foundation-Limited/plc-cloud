@@ -18,6 +18,7 @@ import { WsFactory } from "./factories/WsFactory.js";
 import { UsersDb } from "../db/UsersDb.js";
 import { DevicesDb } from "../db/DevicesDb.js";
 import { TelegramConfigDb } from "../db/TelegramConfigDb.js";
+import { SqliteDb } from "../db/SqliteDb.js";
 import { ApiRouter } from "../http/ApiRouter.js";
 import { SessionStore } from "../state/SessionStore.js";
 import { DeviceRegistry } from "../state/DeviceRegistry.js";
@@ -61,6 +62,7 @@ export class AppContainer {
             ),
             sessions: asClass(SessionStore).singleton(),
             registry: asClass(DeviceRegistry).singleton(),
+            sqliteDb: asClass(SqliteDb).singleton(),
             usersDb: asClass(UsersDb).singleton(),
             devicesDb: asClass(DevicesDb).singleton(),
             telegramConfigDb: asClass(TelegramConfigDb).singleton(),

@@ -70,6 +70,22 @@ export class TgSocketMenu {
             );
             return;
         }
+        await this.renderDetail(
+            ctx,
+            detail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        );
+    }
+
+    async renderDetail(
+        ctx,
+        detail,
+        replyMenu,
+        mainMenuCallbackData,
+        controllersCallbackData,
+    ) {
         const list = Array.isArray(detail?.controllers?.sockets)
             ? detail.controllers.sockets
             : [];
@@ -167,6 +183,7 @@ export class TgSocketMenu {
             });
             return;
         }
+        const detail = await getScopedDetail(deviceId, nodeId, user);
         this.deviceWs?.sendGet(
             Number(deviceId),
             ["controllers"],
@@ -174,16 +191,14 @@ export class TgSocketMenu {
             nodeId || undefined,
         );
         await ctx.answerCallbackQuery({ text: "Переключаю..." });
-        await this.delay(450);
-        await this.open(ctx, {
-            deviceId,
-            nodeId,
-            user,
-            getScopedDetail,
+        if (!detail) return;
+        await this.renderDetail(
+            ctx,
+            this.patchOneState(detail, itemId, (current) => !current),
             replyMenu,
             mainMenuCallbackData,
             controllersCallbackData,
-        });
+        );
     }
 
     async setAll(
@@ -258,16 +273,13 @@ export class TgSocketMenu {
         await ctx.answerCallbackQuery({
             text: targetState === "on" ? "Включаю все..." : "Выключаю все...",
         });
-        await this.delay(500);
-        await this.open(ctx, {
-            deviceId,
-            nodeId,
-            user,
-            getScopedDetail,
+        await this.renderDetail(
+            ctx,
+            this.patchAllStates(detail, targetState === "on"),
             replyMenu,
             mainMenuCallbackData,
             controllersCallbackData,
-        });
+        );
     }
 
     buildKeyboard(detail, controllersCallbackData, mainMenuCallbackData) {
@@ -341,5 +353,37 @@ export class TgSocketMenu {
         return new Promise((resolve) =>
             setTimeout(resolve, Math.max(0, Number(ms) || 0)),
         );
+    }
+
+    patchOneState(detail, itemId, updater) {
+        const next = {
+            ...detail,
+            controllers: {
+                ...(detail?.controllers || {}),
+                sockets: Array.isArray(detail?.controllers?.sockets)
+                    ? detail.controllers.sockets.map((item) => {
+                          if (Number(item?.id) !== Number(itemId)) return item;
+                          const current = Boolean(item?.state);
+                          return { ...item, state: Boolean(updater(current)) };
+                      })
+                    : [],
+            },
+        };
+        return next;
+    }
+
+    patchAllStates(detail, state) {
+        return {
+            ...detail,
+            controllers: {
+                ...(detail?.controllers || {}),
+                sockets: Array.isArray(detail?.controllers?.sockets)
+                    ? detail.controllers.sockets.map((item) => ({
+                          ...item,
+                          state: Boolean(state),
+                      }))
+                    : [],
+            },
+        };
     }
 }

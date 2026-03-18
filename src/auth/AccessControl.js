@@ -177,16 +177,22 @@ function normalizePrincipal(session = {}) {
         username: lower(session.username),
         plcUsername: lower(session.plc_username),
         telegramUsername: lower(session.telegram_username),
+        allowedObjects: toLowerStringSet(session.allowed_objects),
     };
 }
 
 export function resolveAccess(summary, session = {}) {
+    const principal = normalizePrincipal(session);
+    const cloudObjectName = lower(summary?.object_name);
+    const cloudObjectAllowed =
+        !principal.allowedObjects.size ||
+        principal.allowedObjects.has(cloudObjectName);
     const source = aclSourceFromSummary(summary);
     if (!source) {
         return {
             restricted: false,
             matched: true,
-            objectAllowed: true,
+            objectAllowed: cloudObjectAllowed,
             deviceAllowed: true,
             statusRead: true,
             networkRead: true,
@@ -199,7 +205,6 @@ export function resolveAccess(summary, session = {}) {
         };
     }
 
-    const principal = normalizePrincipal(session);
     const rules = aclEntriesFromSource(source).map(normalizeRule);
     const rule = rules.find((item) => {
         if (!item.usernames.size) return false;
@@ -229,7 +234,9 @@ export function resolveAccess(summary, session = {}) {
 
     const objectName = lower(summary?.object_name);
     const deviceId = Number(summary?.device_id);
-    const objectAllowed = !rule.objects.size || rule.objects.has(objectName);
+    const objectAllowed =
+        cloudObjectAllowed &&
+        (!rule.objects.size || rule.objects.has(objectName));
     const deviceAllowed = !rule.deviceIds.size || rule.deviceIds.has(deviceId);
     const controllers = {};
     for (const key of CONTROLLER_KEYS) {
@@ -364,6 +371,8 @@ export function canSendControllerCommand(
 }
 
 export function filterObjectsForSummaries(objects, summaries, session = {}) {
+    const principal = normalizePrincipal(session);
+    const cloudRestricted = principal.allowedObjects.size > 0;
     const visibleNames = new Set();
     let sawRestrictedAcl = false;
     for (const summary of summaries) {
@@ -377,9 +386,16 @@ export function filterObjectsForSummaries(objects, summaries, session = {}) {
             visibleNames.add(String(summary.object_name));
         }
     }
-    if (!sawRestrictedAcl) return objects;
+    if (!sawRestrictedAcl && !cloudRestricted) return objects;
     return asArray(objects).filter((item) => {
         const name = typeof item === "string" ? item : item?.name;
+        if (
+            cloudRestricted &&
+            !principal.allowedObjects.has(lower(name))
+        ) {
+            return false;
+        }
+        if (!sawRestrictedAcl) return true;
         return visibleNames.has(String(name || ""));
     });
 }

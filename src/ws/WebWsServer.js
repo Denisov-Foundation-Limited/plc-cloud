@@ -46,7 +46,7 @@ export class WebWsServer {
                 return;
             }
             logger.info(
-                `web connected: user=${this.describeSessionUser(session)}`,
+                `web connected: user: ${this.describeSessionUser(session)}`,
             );
             ws.session = session;
             ws.sessionToken = token;
@@ -59,7 +59,7 @@ export class WebWsServer {
                     msg = JSON.parse(data.toString());
                 } catch (err) {
                     logger.warn(
-                        `web invalid json: user=${this.describeSessionUser(ws.session)}`,
+                        `web invalid json: user: ${this.describeSessionUser(ws.session)}`,
                     );
                     return;
                 }
@@ -67,7 +67,7 @@ export class WebWsServer {
                     this.logUserAction(
                         ws,
                         "list_devices",
-                        `object=${String(msg.object_name || "").trim() || "-"}`,
+                        `object: ${String(msg.object_name || "").trim() || "-"}`,
                     );
                     const devices = await this.registry.listOnlineDevices(
                         msg.object_name || "",
@@ -101,7 +101,7 @@ export class WebWsServer {
                     this.logUserAction(
                         ws,
                         "subscribe_device",
-                        `device_id=${deviceId}`,
+                        `device_id: ${deviceId}`,
                     );
                     const summary = await this.registry.buildSummary(
                         deviceId,
@@ -127,7 +127,7 @@ export class WebWsServer {
                     this.logUserAction(
                         ws,
                         "unsubscribe_device",
-                        `device_id=${Number(msg.device_id)}`,
+                        `device_id: ${Number(msg.device_id)}`,
                     );
                     ws.subscriptions.delete(Number(msg.device_id));
                     return;
@@ -137,10 +137,10 @@ export class WebWsServer {
                         ws,
                         "send_get",
                         [
-                            `device_id=${Number(msg.device_id)}`,
-                            `unit=${msg.unit || "local"}`,
-                            `node_id=${msg.node_id ?? "-"}`,
-                            `what=${Array.isArray(msg.what) ? msg.what.join(",") : "-"}`,
+                            `device_id: ${Number(msg.device_id)}`,
+                            `unit: ${msg.unit || "local"}`,
+                            `node_id: ${msg.node_id ?? "-"}`,
+                            `what: ${Array.isArray(msg.what) ? msg.what.join(",") : "-"}`,
                         ].join(" "),
                     );
                     const summary = await this.registry.buildSummary(
@@ -182,12 +182,12 @@ export class WebWsServer {
                         ws,
                         "send_cmd",
                         [
-                            `device_id=${Number(msg.device_id)}`,
-                            `unit=${msg.unit || "local"}`,
-                            `node_id=${msg.node_id ?? "-"}`,
-                            `controller=${msg.controller || "-"}`,
-                            `action=${msg.action || "-"}`,
-                            `args=${this.safeJson(msg.args || {})}`,
+                            `device_id: ${Number(msg.device_id)}`,
+                            `unit: ${msg.unit || "local"}`,
+                            `node_id: ${msg.node_id ?? "-"}`,
+                            `controller: ${msg.controller || "-"}`,
+                            `action: ${msg.action || "-"}`,
+                            `args: ${this.safeJson(msg.args || {})}`,
                         ].join(" "),
                     );
                     const summary = await this.registry.buildSummary(
@@ -247,7 +247,7 @@ export class WebWsServer {
 
             ws.on("close", () => {
                 logger.info(
-                    `web disconnected: user=${this.describeSessionUser(ws.session)}`,
+                    `web disconnected: user: ${this.describeSessionUser(ws.session)}`,
                 );
                 this.clients.delete(ws);
             });
@@ -258,12 +258,12 @@ export class WebWsServer {
         if (!session) return "-";
         const username = String(session.username || "").trim() || "-";
         const plcUsername = String(session.plc_username || "").trim() || "-";
-        return `${username} plc=${plcUsername}`;
+        return `${username} plc: ${plcUsername}`;
     }
 
     logUserAction(ws, action, details = "") {
         logger.info(
-            `web action: user=${this.describeSessionUser(ws?.session)} action=${action}${details ? ` ${details}` : ""}`,
+            `web action: user: ${this.describeSessionUser(ws?.session)} action: ${action}${details ? ` ${details}` : ""}`,
         );
     }
 

@@ -9,7 +9,7 @@
 - аутентификацию веб-пользователей;
 - поддержку websocket-сессий устройств;
 - проксирование протокольных команд между браузером, Telegram и PLC;
-- хранение конфигурации в `data/`;
+- хранение persistent-данных в SQLite под `data/`;
 - поддержку live runtime state и ACL-фильтрации в памяти.
 
 ## Текущая топология рантайма
@@ -54,10 +54,11 @@ flowchart TB
         SES["SessionStore"]
     end
 
-    subgraph DB["Persistent JSON"]
+    subgraph DB["Persistent SQLite"]
         UDB["UsersDb"]
         DDB["DevicesDb"]
         TDB["TelegramConfigDb"]
+        SDB["SqliteDb"]
     end
 
     IDX --> CTN
@@ -71,6 +72,9 @@ flowchart TB
     API --> UDB
     API --> DDB
     API --> TDB
+    UDB --> SDB
+    DDB --> SDB
+    TDB --> SDB
     API --> SES
     WWS --> ACL
     DWS --> REG
@@ -95,7 +99,7 @@ Composition root:
 
 - config values: `rootDir`, `dataDir`, `publicDir`, `protoPath`, `defaultObjects`, `onlineTtlMs`
 - stores: `SessionStore`, `DeviceRegistry`
-- databases: `UsersDb`, `DevicesDb`, `TelegramConfigDb`
+- databases: `SqliteDb`, `UsersDb`, `DevicesDb`, `TelegramConfigDb`
 - factories: `DatastoreFactory`, `HttpFactory`, `WsFactory`
 - runtime services: `ApiRouter`, `WebWsServer`, `DeviceWsServer`, `TelegramBotService`, `AppServer`
 
@@ -129,7 +133,7 @@ Factory-классы используют scoped registrations для runtime-з
 3. Пользователь маппится на `plc_username`
 4. Меню и команды фильтруются PLC ACL
 5. Действия Telegram вызывают `sendCmd/sendGet`
-6. Бот редактирует текущее inline-сообщение
+6. Бот отправляет новый экран сообщением с inline-кнопками
 
 ## Основные backend-модули
 
@@ -216,6 +220,12 @@ REST API с cookie-session auth.
 
 - видимость объектов и устройств ACL-фильтруется
 - users admin поддерживает `username`, `password`, `plc_username`, `telegram_username`, `chat_id`
+- users admin также поддерживает:
+  - `telegram_notify_online`
+  - `telegram_notify_offline`
+  - `telegram_notify_events`
+  - `notification_prefs`
+  - `allowed_objects`
 - Telegram settings API сейчас хранит token и legacy webhook-поля, но runtime transport уже long polling
 
 ### [src/ws/DeviceWsServer.js](/Users/serg/plc-cloud/src/ws/DeviceWsServer.js)
@@ -270,7 +280,7 @@ REST API с cookie-session auth.
 
 ### [src/db/UsersDb.js](/Users/serg/plc-cloud/src/db/UsersDb.js)
 
-JSON-backed users DB.
+SQLite-backed users DB с legacy-импортом из `data/users.json`.
 
 Поля:
 
@@ -279,6 +289,11 @@ JSON-backed users DB.
 - `plc_username`
 - `telegram_username`
 - `chat_id`
+- `telegram_notify_online`
+- `telegram_notify_offline`
+- `telegram_notify_events`
+- `notification_prefs_json`
+- `allowed_objects_json`
 
 Возможности:
 
@@ -287,10 +302,12 @@ JSON-backed users DB.
 - поиск по Telegram identity
 - rename user
 - нормализация telegram username и chat ID
+- хранение фильтров нотификаций
+- хранение доступа к cloud-объектам
 
 ### [src/db/DevicesDb.js](/Users/serg/plc-cloud/src/db/DevicesDb.js)
 
-JSON-backed БД объектов и устройств.
+SQLite-backed БД объектов и устройств с legacy-импортом из `data/devices.json`.
 
 Поля:
 
@@ -299,7 +316,7 @@ JSON-backed БД объектов и устройств.
 
 ### [src/db/TelegramConfigDb.js](/Users/serg/plc-cloud/src/db/TelegramConfigDb.js)
 
-Хранит Telegram config в `data/telegram.json`.
+Хранит Telegram config в SQLite с legacy-импортом из `data/telegram.json`.
 
 Важно:
 
@@ -314,7 +331,7 @@ Telegram bot service на `grammY`.
 Текущее поведение:
 
 - long polling, не webhook
-- inline-меню с редактированием одного сообщения
+- inline-меню с отправкой нового сообщения на каждый экран
 - корневой экран сразу открывает список объектов
 - неизвестные Telegram users получают `Доступ запрещен`
 - navigation: объект -> устройство/master-slave -> контроллеры
@@ -322,17 +339,30 @@ Telegram bot service на `grammY`.
   - sockets
   - lights
   - meteo
+  - thermo
+  - tanks
+  - septic
+  - watering
   - quick actions
 - уведомления:
   - device online
   - device offline
   - события, кроме `reason=periodic`
+- settings summary:
+  - bot status
+  - `Last Chat ID`
+  - последний username
+  - время последней активности
 
 Menu helpers:
 
 - [src/bot/menu/TgSocketMenu.js](/Users/serg/plc-cloud/src/bot/menu/TgSocketMenu.js)
 - [src/bot/menu/TgLightMenu.js](/Users/serg/plc-cloud/src/bot/menu/TgLightMenu.js)
 - [src/bot/menu/TgMeteoMenu.js](/Users/serg/plc-cloud/src/bot/menu/TgMeteoMenu.js)
+- [src/bot/menu/TgThermoMenu.js](/Users/serg/plc-cloud/src/bot/menu/TgThermoMenu.js)
+- [src/bot/menu/TgTankMenu.js](/Users/serg/plc-cloud/src/bot/menu/TgTankMenu.js)
+- [src/bot/menu/TgSepticMenu.js](/Users/serg/plc-cloud/src/bot/menu/TgSepticMenu.js)
+- [src/bot/menu/TgWateringMenu.js](/Users/serg/plc-cloud/src/bot/menu/TgWateringMenu.js)
 - [src/bot/menu/TgQuickActionMenu.js](/Users/serg/plc-cloud/src/bot/menu/TgQuickActionMenu.js)
 
 ## Фронтенд
@@ -369,6 +399,7 @@ Single-page shell с экранами:
 - renderers для устройств, контроллеров и настроек
 - user cards
 - Telegram settings panel
+- watering / thermo / tanks / septic editors and cards
 
 ### [public/styles.css](/Users/serg/plc-cloud/public/styles.css)
 
@@ -379,6 +410,17 @@ Single-page shell с экранами:
 - controller visuals
 
 ## Данные
+
+### `data/plc-cloud.sqlite`
+
+Основной persistent storage проекта.
+
+Содержит таблицы:
+
+- `users`
+- `devices`
+- `device_objects`
+- `telegram_config`
 
 ### `data/users.json`
 
@@ -436,12 +478,14 @@ Compose публикует:
 - `${WEB_HOST_PORT:-80}:80`
 - `${DEVICE_HOST_PORT:-3001}:3001`
 
+JSON-файлы выше используются только как legacy-источник для импорта.
+
 ## Ограничения и риски
 
 - browser sessions хранятся только в памяти
 - device online state хранится только в памяти
-- JSON storage без locking/transactions
 - long polling Telegram bot предполагает один активный instance на bot token
+- SQLite не заменяет runtime in-memory state устройств
 - storage Telegram всё ещё содержит legacy webhook-поля
 - ACL зависит от того, прислал ли PLC `authz`; без него система живёт в permissive legacy-режиме
 - локальный `node` на этой машине может быть сломан из-за отсутствующего `icu4c`; для проверок безопаснее Docker `node:20-alpine`

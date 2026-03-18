@@ -14,6 +14,10 @@ import {
     sanitizeSummaryForSession,
     canAccessDevice,
 } from "../auth/AccessControl.js";
+import { NOTIFICATION_CATALOG } from "../notifications/NotificationCatalog.js";
+import { rootLogger } from "../utils/Logger.js";
+
+const logger = rootLogger.child("API");
 
 export class ApiRouter {
     constructor({
@@ -44,6 +48,9 @@ export class ApiRouter {
                 password,
             );
             if (!ok) {
+                logger.warn(
+                    `api action: user: ${String(username || "").trim() || "-"} action: login_failed`,
+                );
                 res.status(401).json({
                     ok: false,
                     error: "invalid_credentials",
@@ -52,6 +59,9 @@ export class ApiRouter {
             }
             const user = await this.usersDb.findByUsername(username);
             const token = this.sessions.create(user || username, this.nowMs);
+            logger.info(
+                `api action: user: ${this.describeSessionUser(user || username)} action: login_success`,
+            );
             res.cookie("session", token, { httpOnly: true, sameSite: "lax" });
             res.json({ ok: true });
         });
@@ -59,11 +69,13 @@ export class ApiRouter {
         this.app.post("/api/logout", this.requireAuth(), (req, res) => {
             const token = req.cookies?.session;
             if (token) this.sessions.delete(token);
+            this.logSessionAction(req, "logout");
             res.clearCookie("session");
             res.json({ ok: true });
         });
 
         this.app.get("/api/objects", this.requireAuth(), async (req, res) => {
+            this.logSessionAction(req, "list_objects");
             const objects = await this.devicesDb.listObjects();
             const summaries = await this.registry.listOnlineSummaries(
                 this.devicesDb,
@@ -82,6 +94,11 @@ export class ApiRouter {
                 res.status(400).json({ ok: false, error: "object_required" });
                 return;
             }
+            this.logSessionAction(
+                req,
+                "list_devices",
+                `object: ${String(objectName).trim() || "-"}`,
+            );
             const devices = await this.registry.listOnlineDevices(
                 objectName,
                 this.devicesDb,
@@ -111,6 +128,7 @@ export class ApiRouter {
             this.requireAuth(),
             async (req, res) => {
                 const deviceId = Number(req.params.id);
+                this.logSessionAction(req, "get_device", `device_id: ${deviceId}`);
                 const summary = await this.registry.buildSummary(
                     deviceId,
                     this.devicesDb,
@@ -138,6 +156,7 @@ export class ApiRouter {
             "/api/admin/devices",
             this.requireAuth(),
             async (req, res) => {
+                this.logSessionAction(req, "admin_list_devices");
                 const devices = await this.registry.listAllWithStatus(
                     this.devicesDb,
                 );
@@ -149,8 +168,15 @@ export class ApiRouter {
             "/api/admin/users",
             this.requireAuth(),
             async (req, res) => {
+                this.logSessionAction(req, "admin_list_users");
                 const users = await this.usersDb.listUsers();
-                res.json({ ok: true, users });
+                const objects = await this.devicesDb.listObjects();
+                res.json({
+                    ok: true,
+                    users,
+                    objects,
+                    notification_catalog: NOTIFICATION_CATALOG,
+                });
             },
         );
 
@@ -158,6 +184,7 @@ export class ApiRouter {
             "/api/admin/telegram/settings",
             this.requireAuth(),
             async (req, res) => {
+                this.logSessionAction(req, "admin_get_telegram_settings");
                 const settings =
                     this.telegramBotService?.getSettingsSummary?.() || null;
                 res.json({ ok: true, settings });
@@ -169,6 +196,7 @@ export class ApiRouter {
             this.requireAuth(),
             async (req, res) => {
                 try {
+                    this.logSessionAction(req, "admin_update_telegram_settings");
                     const settings =
                         await this.telegramBotService.updateSettings({
                             token: req.body?.token,
@@ -178,6 +206,9 @@ export class ApiRouter {
                         });
                     res.json({ ok: true, settings });
                 } catch (err) {
+                    logger.error(
+                        `api action: user: ${this.describeSessionUser(req.session)} action: admin_update_telegram_settings_failed error: ${err?.message || "unknown_error"}`,
+                    );
                     res.status(500).json({
                         ok: false,
                         error:
@@ -197,6 +228,11 @@ export class ApiRouter {
                     plc_username,
                     telegram_username,
                     chat_id,
+                    telegram_notify_online,
+                    telegram_notify_offline,
+                    telegram_notify_events,
+                    notification_prefs,
+                    allowed_objects,
                 } = req.body || {};
                 try {
                     const user = await this.usersDb.createUser({
@@ -205,7 +241,17 @@ export class ApiRouter {
                         plc_username,
                         telegram_username,
                         chat_id,
+                        telegram_notify_online,
+                        telegram_notify_offline,
+                        telegram_notify_events,
+                        notification_prefs,
+                        allowed_objects,
                     });
+                    this.logSessionAction(
+                        req,
+                        "admin_create_user",
+                        `target: ${String(username || "").trim() || "-"}`,
+                    );
                     res.json({ ok: true, user });
                 } catch (err) {
                     const error = err?.message || "user_create_failed";
@@ -252,6 +298,40 @@ export class ApiRouter {
                 )
                     ? req.body.chat_id
                     : undefined;
+                const telegram_notify_online =
+                    Object.prototype.hasOwnProperty.call(
+                        req.body || {},
+                        "telegram_notify_online",
+                    )
+                        ? req.body.telegram_notify_online
+                        : undefined;
+                const telegram_notify_offline =
+                    Object.prototype.hasOwnProperty.call(
+                        req.body || {},
+                        "telegram_notify_offline",
+                    )
+                        ? req.body.telegram_notify_offline
+                        : undefined;
+                const telegram_notify_events =
+                    Object.prototype.hasOwnProperty.call(
+                        req.body || {},
+                        "telegram_notify_events",
+                    )
+                        ? req.body.telegram_notify_events
+                        : undefined;
+                const notification_prefs =
+                    Object.prototype.hasOwnProperty.call(
+                        req.body || {},
+                        "notification_prefs",
+                    )
+                        ? req.body.notification_prefs
+                        : undefined;
+                const allowed_objects = Object.prototype.hasOwnProperty.call(
+                    req.body || {},
+                    "allowed_objects",
+                )
+                    ? req.body.allowed_objects
+                    : undefined;
                 try {
                     const user = await this.usersDb.updateUser(
                         req.params.username,
@@ -261,7 +341,20 @@ export class ApiRouter {
                             plc_username,
                             telegram_username,
                             chat_id,
+                            telegram_notify_online,
+                            telegram_notify_offline,
+                            telegram_notify_events,
+                            notification_prefs,
+                            allowed_objects,
                         },
+                    );
+                    this.logSessionAction(
+                        req,
+                        "admin_update_user",
+                        [
+                            `target: ${String(req.params.username || "").trim() || "-"}`,
+                            `next: ${String(username || req.params.username || "").trim() || "-"}`,
+                        ].join(" "),
                     );
                     res.json({ ok: true, user });
                 } catch (err) {
@@ -283,6 +376,11 @@ export class ApiRouter {
             async (req, res) => {
                 try {
                     await this.usersDb.deleteUser(req.params.username);
+                    this.logSessionAction(
+                        req,
+                        "admin_delete_user",
+                        `target: ${String(req.params.username || "").trim() || "-"}`,
+                    );
                     res.json({ ok: true });
                 } catch (err) {
                     const error = err?.message || "user_delete_failed";
@@ -307,6 +405,11 @@ export class ApiRouter {
                         name,
                         icon,
                     );
+                    this.logSessionAction(
+                        req,
+                        "admin_create_object",
+                        `name=${String(objectItem?.name || "").trim() || "-"}`,
+                    );
                     res.json({ ok: true, object: objectItem });
                 } catch (err) {
                     const error = err?.message || "object_create_failed";
@@ -326,6 +429,11 @@ export class ApiRouter {
             async (req, res) => {
                 try {
                     await this.devicesDb.deleteObject(req.params.name);
+                    this.logSessionAction(
+                        req,
+                        "admin_delete_object",
+                        `name=${String(req.params.name || "").trim() || "-"}`,
+                    );
                     res.json({ ok: true });
                 } catch (err) {
                     const error = err?.message || "object_delete_failed";
@@ -349,6 +457,14 @@ export class ApiRouter {
                     const objectName = await this.devicesDb.renameObject(
                         req.params.name,
                         nextName,
+                    );
+                    this.logSessionAction(
+                        req,
+                        "admin_rename_object",
+                        [
+                            `from: ${String(req.params.name || "").trim() || "-"}`,
+                            `to: ${String(objectName || "").trim() || "-"}`,
+                        ].join(" "),
                     );
                     res.json({ ok: true, object: objectName });
                 } catch (err) {
@@ -374,6 +490,14 @@ export class ApiRouter {
                     const nextIcon = await this.devicesDb.setObjectIcon(
                         req.params.name,
                         icon,
+                    );
+                    this.logSessionAction(
+                        req,
+                        "admin_set_object_icon",
+                        [
+                            `name=${String(req.params.name || "").trim() || "-"}`,
+                            `icon: ${String(nextIcon || "").trim() || "-"}`,
+                        ].join(" "),
                     );
                     res.json({ ok: true, icon: nextIcon });
                 } catch (err) {
@@ -408,6 +532,15 @@ export class ApiRouter {
                         api_key,
                         object_name,
                     });
+                    this.logSessionAction(
+                        req,
+                        "admin_create_device",
+                        [
+                            `device_id: ${Number(device_id) || "-"}`,
+                            `name=${String(name || "").trim() || "-"}`,
+                            `object: ${String(object_name || "").trim() || "-"}`,
+                        ].join(" "),
+                    );
                     res.json({ ok: true, api_key: key });
                 } catch (err) {
                     res.status(400).json({
@@ -438,6 +571,16 @@ export class ApiRouter {
                         name: req.body?.name ?? row.name,
                         object_name: req.body?.object_name ?? row.object_name,
                     });
+                    this.logSessionAction(
+                        req,
+                        "admin_update_device",
+                        [
+                            `current_id: ${row.device_id}`,
+                            `next_id: ${Number(req.body?.device_id || row.device_id) || row.device_id}`,
+                            `name=${String(req.body?.name ?? row.name ?? "").trim() || "-"}`,
+                            `object: ${String(req.body?.object_name ?? row.object_name ?? "").trim() || "-"}`,
+                        ].join(" "),
+                    );
                 } catch (err) {
                     res.status(400).json({
                         ok: false,
@@ -463,6 +606,11 @@ export class ApiRouter {
                     return;
                 }
                 const key = await this.devicesDb.rotateKey(deviceId);
+                this.logSessionAction(
+                    req,
+                    "admin_rotate_device_key",
+                    `device_id: ${deviceId}`,
+                );
                 if (this.onDeviceDisconnect) {
                     this.onDeviceDisconnect(deviceId);
                 }
@@ -476,6 +624,11 @@ export class ApiRouter {
             async (req, res) => {
                 const deviceId = Number(req.params.id);
                 await this.devicesDb.deleteDevice(deviceId);
+                this.logSessionAction(
+                    req,
+                    "admin_delete_device",
+                    `device_id: ${deviceId}`,
+                );
                 if (this.onDeviceDisconnect) {
                     this.onDeviceDisconnect(deviceId);
                 }
@@ -494,5 +647,21 @@ export class ApiRouter {
             req.session = session;
             next();
         };
+    }
+
+    describeSessionUser(session) {
+        if (!session) return "-";
+        if (typeof session === "string") {
+            return String(session).trim() || "-";
+        }
+        const username = String(session.username || "").trim() || "-";
+        const plcUsername = String(session.plc_username || "").trim() || "-";
+        return `${username} plc: ${plcUsername}`;
+    }
+
+    logSessionAction(req, action, details = "") {
+        logger.info(
+            `api action: user: ${this.describeSessionUser(req?.session)} action: ${action}${details ? ` ${details}` : ""}`,
+        );
     }
 }

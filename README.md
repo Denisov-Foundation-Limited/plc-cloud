@@ -22,7 +22,7 @@
 Проект решает несколько задач:
 
 - аутентификация пользователей веб-интерфейса;
-- хранение объектов, устройств, пользователей и Telegram-настроек в JSON;
+- хранение объектов, устройств, пользователей и Telegram-настроек в SQLite;
 - поддержание онлайн-сессий устройств;
 - проксирование протокольных `get/cmd` команд между браузером, Telegram и PLC;
 - фильтрация объектов, устройств, контроллеров и команд через ACL, приходящий от PLC;
@@ -53,14 +53,14 @@
 ## Стек
 
 ```text
-⚙️ Express   ⚡ ws   🧩 awilix   🤖 grammY   💾 JSON storage
+⚙️ Express   ⚡ ws   🧩 awilix   🤖 grammY   💾 SQLite
 ```
 
 - `Express`
 - `ws`
 - `awilix`
 - `grammY`
-- JSON-хранилище в `data/`
+- `sequelize` + `sqlite3`
 - in-memory runtime state в `DeviceRegistry`
 
 ## Общая архитектура
@@ -174,7 +174,7 @@ sequenceDiagram
     TG->>DWS: sendCmd() / sendGet()
     DWS->>PLC: cmd / get
     PLC-->>DWS: ack / result
-    TG-->>User: редактирование текущего сообщения
+    TG-->>User: новое сообщение с меню
 ```
 
 ## Dependency Injection
@@ -230,31 +230,42 @@ proto.json
 
 ## Данные
 
-### `data/users.json`
+### Основное хранилище
 
-Хранит пользователей веба и привязку к Telegram:
+Основная БД проекта:
+
+- `data/plc-cloud.sqlite`
+
+В ней лежат:
+
+- объекты и устройства
+- пользователи
+- Telegram-конфиг
+
+### Legacy-импорт
+
+При первом запуске код умеет импортировать старые JSON-файлы:
+
+- `data/users.json`
+- `data/devices.json`
+- `data/telegram.json`
+
+После импорта основным источником истины становится SQLite.
+
+### Пользователи
+
+Пользователь хранит не только логин и пароль, но и Telegram/ACL-поля:
 
 - `username`
 - `password_hash`
 - `plc_username`
 - `telegram_username`
 - `chat_id`
-
-### `data/devices.json`
-
-Хранит:
-
-- объекты с иконками
-- устройства с `device_id`, `name`, `api_key`, `object_name`, `last_seen_ms`
-
-### `data/telegram.json`
-
-Хранит Telegram-конфиг.
-
-Важно:
-
-- для long polling реально нужен только `token`
-- `public_base_url`, `webhook_path`, `secret_token` сейчас остались как legacy-поля хранения
+- `telegram_notify_online`
+- `telegram_notify_offline`
+- `telegram_notify_events`
+- `notification_prefs_json`
+- `allowed_objects_json`
 
 ## Переменные окружения
 
@@ -402,7 +413,18 @@ Endpoint:
 - розетки
 - свет
 - метео
+- термостаты
+- баки
+- септик
+- полив
 - быстрые действия
+
+Поведение меню:
+
+- long polling
+- inline-кнопки
+- бот отправляет новый экран сообщением, а не редактирует текущее сообщение
+- в настройках облака показываются `Last Chat ID`, последний username и время последней активности
 
 Уведомления уходят только тем пользователям, у которых:
 
@@ -421,6 +443,10 @@ SPA включает:
 - розетки
 - свет
 - метео
+- термостаты
+- баки
+- септик
+- полив
 - сеть
 - настройки с плитками:
   - объекты
@@ -444,11 +470,10 @@ ACL приходит от PLC и интерпретируется в:
 
 ## Ограничения
 
-> ℹ️ Проект ориентирован на простую файловую persistence-модель и живой runtime state в памяти.
+> ℹ️ Проект использует SQLite для persistent-данных и живой runtime state в памяти.
 
 - браузерные сессии хранятся только в памяти
 - online runtime state хранятся только в памяти
-- JSON-хранилище без транзакций и lock-слоя
 - long polling предполагает один активный экземпляр бота на токен
 - Telegram storage всё ещё содержит legacy webhook-поля
 - локальный `node` на этой машине может падать из-за отсутствующего `icu4c`; для проверок безопаснее использовать Docker `node:20-alpine`

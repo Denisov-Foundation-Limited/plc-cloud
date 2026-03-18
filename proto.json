@@ -344,6 +344,7 @@
             "status": "bool",
             "port": "u8",
             "tank": "u8",
+            "tank_name": "string",
             "weekdays_mask": "u8",
             "hour": "u8",
             "minute": "u8",
@@ -442,7 +443,10 @@
             { "action": "monitor", "args": { "id": "u8", "state": "on|off" } }
         ],
         "watering": [
-            { "action": "status", "args": { "id": "u8", "state": "on|off" } }
+            { "action": "status", "args": { "id": "u8", "state": "on|off" } },
+            { "action": "weekdays", "args": { "id": "u8", "weekdays_mask": "u8" } },
+            { "action": "time", "args": { "id": "u8", "slot": "u8", "hour": "u8", "minute": "u8" } },
+            { "action": "duration", "args": { "id": "u8", "slot": "u8", "duration_s": "u32" } }
         ],
         "security": [
             { "action": "arm", "args": {} },

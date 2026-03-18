@@ -1,5 +1,4 @@
 /**********************************************************************/
-
 /*                                                                    */
 /* Programmable Logic Controller Cloud Service                        */
 /*                                                                    */
@@ -20,12 +19,14 @@ function normalizePath(value, fallback = "/telegram/webhook") {
 export class TelegramConfigDb {
     constructor({
         dataDir,
+        sqliteDb,
         telegramBotToken,
         telegramBotPublicBaseUrl,
         telegramBotWebhookPath,
         telegramBotSecretToken,
     }) {
         this.filePath = path.join(dataDir, "telegram.json");
+        this.sqliteDb = sqliteDb;
         this.defaults = this.normalize({
             token: telegramBotToken,
             public_base_url: telegramBotPublicBaseUrl,
@@ -35,26 +36,37 @@ export class TelegramConfigDb {
     }
 
     async init() {
-        const fileExists = await this.hasStorageFile();
-        const data = await this.readData();
+        const { TelegramConfig } = await this.sqliteDb.init();
+        await this.importLegacyIfNeeded_(TelegramConfig);
+
+        const existing = await TelegramConfig.findByPk(1);
         const normalized = this.normalize({
-            token: fileExists ? data.token : this.defaults.token,
-            public_base_url: fileExists
-                ? data.public_base_url
+            token: existing ? existing.token : this.defaults.token,
+            public_base_url: existing
+                ? existing.public_base_url
                 : this.defaults.public_base_url,
-            webhook_path: fileExists
-                ? data.webhook_path
+            webhook_path: existing
+                ? existing.webhook_path
                 : this.defaults.webhook_path,
-            secret_token: fileExists
-                ? data.secret_token
+            secret_token: existing
+                ? existing.secret_token
                 : this.defaults.secret_token,
         });
-        await this.writeData(normalized);
+
+        if (existing) {
+            await existing.update(normalized);
+        } else {
+            await TelegramConfig.create({
+                id: 1,
+                ...normalized,
+            });
+        }
     }
 
     async getSettings() {
-        const data = await this.readData();
-        return this.normalize(data);
+        const { TelegramConfig } = await this.sqliteDb.init();
+        const row = await TelegramConfig.findByPk(1);
+        return this.normalize(row ? row.get({ plain: true }) : this.defaults);
     }
 
     async updateSettings(patch = {}) {
@@ -82,7 +94,13 @@ export class TelegramConfigDb {
                 ? patch.secret_token
                 : current.secret_token,
         });
-        await this.writeData(next);
+        const { TelegramConfig } = await this.sqliteDb.init();
+        const row = await TelegramConfig.findByPk(1);
+        if (row) {
+            await row.update(next);
+        } else {
+            await TelegramConfig.create({ id: 1, ...next });
+        }
         return next;
     }
 
@@ -100,33 +118,22 @@ export class TelegramConfigDb {
         };
     }
 
-    async hasStorageFile() {
-        try {
-            await fs.access(this.filePath);
-            return true;
-        } catch (err) {
-            return false;
-        }
-    }
+    async importLegacyIfNeeded_(TelegramConfig) {
+        const count = await TelegramConfig.count();
+        if (count > 0) return;
 
-    async readData() {
+        let parsed = null;
         try {
             const raw = await fs.readFile(this.filePath, "utf8");
-            const parsed = JSON.parse(raw);
-            return parsed && typeof parsed === "object" ? parsed : {};
+            parsed = JSON.parse(raw);
         } catch (err) {
-            if (err.code === "ENOENT") {
-                return {};
-            }
+            if (err?.code === "ENOENT") return;
             throw err;
         }
-    }
 
-    async writeData(data) {
-        await fs.writeFile(
-            this.filePath,
-            JSON.stringify(this.normalize(data), null, 2),
-            "utf8",
-        );
+        await TelegramConfig.create({
+            id: 1,
+            ...this.normalize(parsed || {}),
+        });
     }
 }

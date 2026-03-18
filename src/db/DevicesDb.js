@@ -1,5 +1,4 @@
 /**********************************************************************/
-
 /*                                                                    */
 /* Programmable Logic Controller Cloud Service                        */
 /*                                                                    */
@@ -15,7 +14,7 @@ import path from "node:path";
 import { generateApiKey } from "../utils/crypto.js";
 
 export class DevicesDb {
-    constructor({ dataDir, defaultObjects = [] }) {
+    constructor({ dataDir, defaultObjects = [], sqliteDb }) {
         this.filePath = path.join(dataDir, "devices.json");
         this.defaultObjects = defaultObjects;
         this.defaultObjectIcon = "house";
@@ -26,39 +25,40 @@ export class DevicesDb {
             "garage",
             "garden",
         ]);
+        this.sqliteDb = sqliteDb;
     }
 
     async init() {
-        const fileExists = await this.hasStorageFile();
-        const data = await this.readData();
-        if (!fileExists) {
-            for (const obj of this.defaultObjects) {
-                this.ensureObject(data, obj, this.defaultObjectIcon);
-            }
+        const { Device, DeviceObject } = await this.sqliteDb.init();
+        await this.importLegacyIfNeeded_(Device, DeviceObject);
+
+        for (const obj of this.defaultObjects) {
+            await this.ensureObjectByName_(DeviceObject, obj, this.defaultObjectIcon);
         }
-        data.objects = this.uniqueSortedObjects(data.objects);
-        await this.writeData(data);
     }
 
     async ensureSample() {
-        const data = await this.readData();
-        const sample = data.devices.find((row) => row.api_key === "DEV_KEY_1");
+        const { Device, DeviceObject } = await this.sqliteDb.init();
+        const sample = await Device.findOne({ where: { api_key: "DEV_KEY_1" } });
         if (!sample) {
-            data.devices.push({
+            await Device.create({
                 device_id: 12345678,
                 name: "PLC-ESP Demo",
                 api_key: "DEV_KEY_1",
                 object_name: "Квартира",
                 last_seen_ms: 0,
             });
-            this.ensureObject(data, "Квартира", "apartment");
-            await this.writeData(data);
+            await this.ensureObjectByName_(DeviceObject, "Квартира", "apartment");
         }
     }
 
     async listObjects() {
-        const data = await this.readData();
-        return this.uniqueSortedObjects(data.objects);
+        const { DeviceObject } = await this.sqliteDb.init();
+        const rows = await DeviceObject.findAll({ order: [["name", "ASC"]] });
+        return rows.map((row) => ({
+            name: String(row.name || "").trim(),
+            icon: this.normalizeIcon(row.icon),
+        }));
     }
 
     async listObjectNames() {
@@ -68,261 +68,180 @@ export class DevicesDb {
 
     async createObject(name, icon = this.defaultObjectIcon) {
         const objectName = String(name || "").trim();
-        if (!objectName) {
-            throw new Error("object_name_required");
-        }
-        const data = await this.readData();
-        if (
-            data.objects.some((row) => String(row?.name || row) === objectName)
-        ) {
-            throw new Error("object_exists");
-        }
+        if (!objectName) throw new Error("object_name_required");
+        const { DeviceObject } = await this.sqliteDb.init();
+        const existing = await DeviceObject.findByPk(objectName);
+        if (existing) throw new Error("object_exists");
         const normalizedIcon = this.normalizeIcon(icon);
-        data.objects.push({ name: objectName, icon: normalizedIcon });
-        data.objects = this.uniqueSortedObjects(data.objects);
-        await this.writeData(data);
+        await DeviceObject.create({ name: objectName, icon: normalizedIcon });
         return { name: objectName, icon: normalizedIcon };
     }
 
     async deleteObject(name) {
         const objectName = String(name || "").trim();
-        if (!objectName) {
-            throw new Error("object_name_required");
-        }
-        const data = await this.readData();
-        if (
-            !data.objects.some((row) => String(row?.name || row) === objectName)
-        ) {
-            throw new Error("object_not_found");
-        }
-        if (
-            data.devices.some(
-                (row) => String(row.object_name || "") === objectName,
-            )
-        ) {
-            throw new Error("object_has_devices");
-        }
-        data.objects = data.objects.filter(
-            (row) => String(row?.name || row) !== objectName,
-        );
-        await this.writeData(data);
+        if (!objectName) throw new Error("object_name_required");
+        const { DeviceObject, Device } = await this.sqliteDb.init();
+        const existing = await DeviceObject.findByPk(objectName);
+        if (!existing) throw new Error("object_not_found");
+        const used = await Device.count({ where: { object_name: objectName } });
+        if (used) throw new Error("object_has_devices");
+        await existing.destroy();
     }
 
     async renameObject(currentName, nextName) {
         const from = String(currentName || "").trim();
         const to = String(nextName || "").trim();
-        if (!from || !to) {
-            throw new Error("object_name_required");
-        }
-        if (from === to) {
-            throw new Error("object_name_same");
-        }
-        const data = await this.readData();
-        if (!data.objects.some((row) => String(row?.name || row) === from)) {
-            throw new Error("object_not_found");
-        }
-        if (data.objects.some((row) => String(row?.name || row) === to)) {
-            throw new Error("object_exists");
-        }
+        if (!from || !to) throw new Error("object_name_required");
+        if (from === to) throw new Error("object_name_same");
 
-        data.objects = data.objects.map((row) => {
-            const obj = this.normalizeObjectEntry(row);
-            return obj.name === from ? { ...obj, name: to } : obj;
+        const { DeviceObject, Device, sequelize } = await this.sqliteDb.init();
+        const source = await DeviceObject.findByPk(from);
+        if (!source) throw new Error("object_not_found");
+        const target = await DeviceObject.findByPk(to);
+        if (target) throw new Error("object_exists");
+
+        await sequelize.transaction(async (tx) => {
+            await DeviceObject.create(
+                { name: to, icon: this.normalizeIcon(source.icon) },
+                { transaction: tx },
+            );
+            await Device.update(
+                { object_name: to },
+                { where: { object_name: from }, transaction: tx },
+            );
+            await source.destroy({ transaction: tx });
         });
-        for (const device of data.devices) {
-            if (String(device.object_name || "") === from) {
-                device.object_name = to;
-            }
-        }
-        data.objects = this.uniqueSortedObjects(data.objects);
-        await this.writeData(data);
         return to;
     }
 
     async setObjectIcon(name, icon) {
         const objectName = String(name || "").trim();
-        if (!objectName) {
-            throw new Error("object_name_required");
-        }
-        const data = await this.readData();
-        const index = data.objects.findIndex(
-            (row) => String(row?.name || row) === objectName,
-        );
-        if (index < 0) {
-            throw new Error("object_not_found");
-        }
+        if (!objectName) throw new Error("object_name_required");
+        const { DeviceObject } = await this.sqliteDb.init();
+        const row = await DeviceObject.findByPk(objectName);
+        if (!row) throw new Error("object_not_found");
         const normalizedIcon = this.normalizeIcon(icon);
-        data.objects[index] = { name: objectName, icon: normalizedIcon };
-        data.objects = this.uniqueSortedObjects(data.objects);
-        await this.writeData(data);
+        await row.update({ icon: normalizedIcon });
         return normalizedIcon;
     }
 
     async listDevicesByObject(objectName) {
-        const data = await this.readData();
-        return data.devices
-            .filter((row) => row.object_name === objectName)
-            .sort((a, b) => a.device_id - b.device_id);
+        const { Device } = await this.sqliteDb.init();
+        const rows = await Device.findAll({
+            where: { object_name: objectName },
+            order: [["device_id", "ASC"]],
+        });
+        return rows.map((row) => this.toRow_(row));
     }
 
     async listAllDevices() {
-        const data = await this.readData();
-        return [...data.devices].sort((a, b) => {
-            const obj = String(a.object_name || "").localeCompare(
-                String(b.object_name || ""),
-            );
-            if (obj !== 0) return obj;
-            return a.device_id - b.device_id;
+        const { Device } = await this.sqliteDb.init();
+        const rows = await Device.findAll({
+            order: [
+                ["object_name", "ASC"],
+                ["device_id", "ASC"],
+            ],
         });
+        return rows.map((row) => this.toRow_(row));
     }
 
     async getByApiKey(apiKey) {
-        const data = await this.readData();
-        return data.devices.find((row) => row.api_key === apiKey) || null;
+        const { Device } = await this.sqliteDb.init();
+        const row = await Device.findOne({ where: { api_key: apiKey } });
+        return row ? this.toRow_(row) : null;
     }
 
     async getByDeviceId(deviceId) {
-        const data = await this.readData();
-        return data.devices.find((row) => row.device_id === deviceId) || null;
+        const { Device } = await this.sqliteDb.init();
+        const row = await Device.findByPk(Number(deviceId));
+        return row ? this.toRow_(row) : null;
     }
 
     async updateLastSeen(deviceId, ts) {
-        const data = await this.readData();
-        const row = data.devices.find((r) => r.device_id === deviceId);
-        if (!row) {
-            throw new Error("device_not_found");
-        }
-        row.last_seen_ms = ts;
-        await this.writeData(data);
+        const { Device } = await this.sqliteDb.init();
+        const row = await Device.findByPk(Number(deviceId));
+        if (!row) throw new Error("device_not_found");
+        await row.update({ last_seen_ms: Number(ts) || 0 });
     }
 
     async upsertByApiKey({ deviceId, name, apiKey, lastSeenMs }) {
-        const data = await this.readData();
-        const row = data.devices.find((r) => r.api_key === apiKey);
-        if (!row) {
-            throw new Error("device_not_found");
-        }
-        row.device_id = Number(deviceId);
-        row.name = name || null;
-        row.last_seen_ms = lastSeenMs;
-        await this.writeData(data);
+        const { Device } = await this.sqliteDb.init();
+        const row = await Device.findOne({ where: { api_key: apiKey } });
+        if (!row) throw new Error("device_not_found");
+        await row.update({
+            device_id: Number(deviceId),
+            name: name || null,
+            last_seen_ms: Number(lastSeenMs) || 0,
+        });
     }
 
     async createDevice({ device_id, name, api_key, object_name }) {
-        const data = await this.readData();
+        const { Device, DeviceObject } = await this.sqliteDb.init();
+        const deviceId = Number(device_id);
         const key =
             api_key && String(api_key).trim() ? api_key : generateApiKey();
-
-        if (data.devices.some((row) => row.device_id === Number(device_id))) {
-            throw new Error("device_id_exists");
-        }
-        if (data.devices.some((row) => row.api_key === key)) {
+        if (await Device.findByPk(deviceId)) throw new Error("device_id_exists");
+        if (await Device.findOne({ where: { api_key: key } }))
             throw new Error("api_key_exists");
-        }
 
-        data.devices.push({
-            device_id: Number(device_id),
+        await Device.create({
+            device_id: deviceId,
             name: name || null,
             api_key: key,
             object_name,
             last_seen_ms: 0,
         });
-        this.ensureObject(data, object_name, this.defaultObjectIcon);
-        await this.writeData(data);
+        if (object_name) {
+            await this.ensureObjectByName_(
+                DeviceObject,
+                object_name,
+                this.defaultObjectIcon,
+            );
+        }
         return key;
     }
 
     async updateDevice({ currentDeviceId, device_id, name, object_name }) {
-        const data = await this.readData();
-        const row = data.devices.find((r) => r.device_id === currentDeviceId);
-        if (!row) {
-            throw new Error("device_not_found");
+        const { Device, DeviceObject } = await this.sqliteDb.init();
+        const row = await Device.findByPk(Number(currentDeviceId));
+        if (!row) throw new Error("device_not_found");
+
+        const nextDeviceId = device_id ? Number(device_id) : Number(currentDeviceId);
+        if (nextDeviceId !== Number(currentDeviceId)) {
+            const existing = await Device.findByPk(nextDeviceId);
+            if (existing) throw new Error("device_id_exists");
         }
 
-        const nextDeviceId = device_id ? Number(device_id) : currentDeviceId;
-        if (
-            nextDeviceId !== currentDeviceId &&
-            data.devices.some((r) => r.device_id === nextDeviceId)
-        ) {
-            throw new Error("device_id_exists");
-        }
-
-        row.device_id = nextDeviceId;
-        row.name = name ?? null;
-        row.object_name = object_name ?? null;
+        await row.update({
+            device_id: nextDeviceId,
+            name: name ?? null,
+            object_name: object_name ?? null,
+        });
         if (row.object_name) {
-            this.ensureObject(data, row.object_name, this.defaultObjectIcon);
+            await this.ensureObjectByName_(
+                DeviceObject,
+                row.object_name,
+                this.defaultObjectIcon,
+            );
         }
-        await this.writeData(data);
     }
 
     async rotateKey(deviceId) {
-        const data = await this.readData();
-        const row = data.devices.find((r) => r.device_id === deviceId);
-        if (!row) {
-            throw new Error("device_not_found");
-        }
+        const { Device } = await this.sqliteDb.init();
+        const row = await Device.findByPk(Number(deviceId));
+        if (!row) throw new Error("device_not_found");
         let key = generateApiKey();
-        while (data.devices.some((r) => r.api_key === key)) {
+        while (await Device.findOne({ where: { api_key: key } })) {
             key = generateApiKey();
         }
-        row.api_key = key;
-        await this.writeData(data);
+        await row.update({ api_key: key });
         return key;
     }
 
     async deleteDevice(deviceId) {
-        const data = await this.readData();
-        const next = data.devices.filter((r) => r.device_id !== deviceId);
-        if (next.length === data.devices.length) {
-            throw new Error("device_not_found");
-        }
-        data.devices = next;
-        await this.writeData(data);
-    }
-
-    async readData() {
-        try {
-            const raw = await fs.readFile(this.filePath, "utf8");
-            const parsed = JSON.parse(raw);
-            if (!parsed || typeof parsed !== "object") {
-                return { objects: [], devices: [] };
-            }
-            const parsedObjects = Array.isArray(parsed.objects)
-                ? parsed.objects
-                : [];
-            return {
-                objects: this.uniqueSortedObjects(parsedObjects),
-                devices: Array.isArray(parsed.devices) ? parsed.devices : [],
-            };
-        } catch (err) {
-            if (err.code === "ENOENT") {
-                return { objects: [], devices: [] };
-            }
-            throw err;
-        }
-    }
-
-    async writeData(data) {
-        const normalized = {
-            ...data,
-            objects: this.uniqueSortedObjects(data.objects),
-        };
-        const payload = JSON.stringify(normalized, null, 2);
-        await fs.writeFile(this.filePath, payload, "utf8");
-    }
-
-    uniqueSorted(values) {
-        return [
-            ...new Set(
-                values.filter(
-                    (v) =>
-                        v !== null &&
-                        v !== undefined &&
-                        String(v).trim() !== "",
-                ),
-            ),
-        ].sort((a, b) => String(a).localeCompare(String(b)));
+        const { Device } = await this.sqliteDb.init();
+        const deleted = await Device.destroy({ where: { device_id: Number(deviceId) } });
+        if (!deleted) throw new Error("device_not_found");
     }
 
     normalizeIcon(icon) {
@@ -346,43 +265,66 @@ export class DevicesDb {
         };
     }
 
-    uniqueSortedObjects(values) {
-        const items = Array.isArray(values) ? values : [];
-        const map = new Map();
-        for (const raw of items) {
-            const row = this.normalizeObjectEntry(raw);
-            if (!row.name) continue;
-            map.set(row.name, row);
-        }
-        return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
-    }
-
-    ensureObject(data, name, icon = this.defaultObjectIcon) {
+    async ensureObjectByName_(DeviceObject, name, icon = this.defaultObjectIcon) {
         const objectName = String(name || "").trim();
         if (!objectName) return;
-        const existing = data.objects.find(
-            (row) => String(row?.name || row) === objectName,
-        );
-        if (existing) {
-            if (typeof existing !== "string" && !existing.icon) {
-                existing.icon = this.normalizeIcon(icon);
-            }
-            data.objects = this.uniqueSortedObjects(data.objects);
-            return;
-        }
-        data.objects.push({
+        const existing = await DeviceObject.findByPk(objectName);
+        if (existing) return;
+        await DeviceObject.create({
             name: objectName,
             icon: this.normalizeIcon(icon),
         });
-        data.objects = this.uniqueSortedObjects(data.objects);
     }
 
-    async hasStorageFile() {
+    toRow_(row) {
+        return {
+            device_id: Number(row.device_id),
+            name: row.name || null,
+            api_key: row.api_key,
+            object_name: row.object_name || null,
+            last_seen_ms: Number(row.last_seen_ms) || 0,
+        };
+    }
+
+    async importLegacyIfNeeded_(Device, DeviceObject) {
+        const count = await Device.count();
+        const objectCount = await DeviceObject.count();
+        if (count > 0 || objectCount > 0) return;
+
+        let parsed = null;
         try {
-            await fs.access(this.filePath);
-            return true;
-        } catch {
-            return false;
+            const raw = await fs.readFile(this.filePath, "utf8");
+            parsed = JSON.parse(raw);
+        } catch (err) {
+            if (err?.code === "ENOENT") return;
+            throw err;
+        }
+
+        const objects = Array.isArray(parsed?.objects) ? parsed.objects : [];
+        for (const raw of objects) {
+            const row = this.normalizeObjectEntry(raw);
+            if (!row.name) continue;
+            await this.ensureObjectByName_(DeviceObject, row.name, row.icon);
+        }
+
+        const devices = Array.isArray(parsed?.devices) ? parsed.devices : [];
+        for (const row of devices) {
+            const deviceId = Number(row?.device_id);
+            if (!Number.isFinite(deviceId)) continue;
+            await Device.create({
+                device_id: deviceId,
+                name: row?.name || null,
+                api_key: String(row?.api_key || "").trim(),
+                object_name: row?.object_name || null,
+                last_seen_ms: Number(row?.last_seen_ms) || 0,
+            });
+            if (row?.object_name) {
+                await this.ensureObjectByName_(
+                    DeviceObject,
+                    row.object_name,
+                    this.defaultObjectIcon,
+                );
+            }
         }
     }
 }

@@ -27,6 +27,9 @@ export class SessionStore {
             telegram_username:
                 typeof user === "string" ? "" : user?.telegram_username || "",
             chat_id: typeof user === "string" ? "" : user?.chat_id || "",
+            allowed_objects: Array.isArray(user?.allowed_objects)
+                ? [...user.allowed_objects]
+                : [],
             createdAt: nowMs(),
         });
         return token;

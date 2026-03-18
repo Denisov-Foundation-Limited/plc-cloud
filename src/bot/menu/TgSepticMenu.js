@@ -1,0 +1,426 @@
+/**********************************************************************/
+
+/*                                                                    */
+/* Programmable Logic Controller Cloud Service                        */
+/*                                                                    */
+/* Copyright (C) 2026 Denisov Foundation Limited                      */
+/* License: GPLv3                                                     */
+/* Written by Sergey Denisov aka LittleBuster                         */
+/* Email: DenisovFoundationLtd@gmail.com                              */
+/*                                                                    */
+/**********************************************************************/
+import { InlineKeyboard } from "grammy";
+import { canSendControllerCommand } from "../../auth/AccessControl.js";
+
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+}
+
+function panelTitle(title, subtitle = "") {
+    return [
+        `<b>${escapeHtml(title)}</b>`,
+        subtitle ? `<code>${escapeHtml(subtitle)}</code>` : "",
+    ]
+        .filter(Boolean)
+        .join("\n");
+}
+
+function panelDivider() {
+    return "━━━━━━━━━━━━━━━━━";
+}
+
+function itemName(item, fallback) {
+    const raw = String(item?.name || fallback).trim();
+    return raw || fallback;
+}
+
+function monitorOn(item) {
+    return Boolean(item?.monitoring_on ?? item?.monitor_on ?? item?.monitor);
+}
+
+function levelLabel(item) {
+    if (item?.alarm) return "авария";
+    if (item?.warning) return "предупреждение";
+    return "норма";
+}
+
+function levelIcon(item) {
+    if (item?.alarm) return "🔴";
+    if (item?.warning) return "🟠";
+    return "🟢";
+}
+
+function buttonLabel(item, fallback) {
+    const raw = itemName(item, fallback);
+    const short = raw.length > 14 ? `${raw.slice(0, 14)}…` : raw;
+    return `${levelIcon(item)} ${short}`;
+}
+
+export class TgSepticMenu {
+    constructor({ registry, devicesDb }) {
+        this.registry = registry;
+        this.devicesDb = devicesDb;
+        this.deviceWs = null;
+    }
+
+    setDeviceWs(deviceWs) {
+        this.deviceWs = deviceWs;
+    }
+
+    async open(
+        ctx,
+        {
+            deviceId,
+            nodeId = null,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        },
+    ) {
+        const detail = await getScopedDetail(deviceId, nodeId, user);
+        if (!detail) {
+            await replyMenu(
+                ctx,
+                "Устройство недоступно.",
+                new InlineKeyboard().text("🏘 К началу", mainMenuCallbackData),
+            );
+            return;
+        }
+        const list = Array.isArray(detail?.controllers?.septic)
+            ? detail.controllers.septic
+            : [];
+        if (!list.length) {
+            await replyMenu(
+                ctx,
+                "Нет доступного септика.",
+                this.buildBackKeyboard(
+                    deviceId,
+                    nodeId,
+                    controllersCallbackData,
+                    mainMenuCallbackData,
+                ),
+            );
+            return;
+        }
+        const alarms = list.filter((item) => Boolean(item?.alarm)).length;
+        const warnings = list.filter((item) => Boolean(item?.warning)).length;
+        const lines = list.map((item) => {
+            const id = Number(item?.id);
+            return [
+                `${levelIcon(item)} ${itemName(item, `Септик ${id}`)}`,
+                `   Уровень: ${levelLabel(item)}  ·  Мониторинг: ${monitorOn(item) ? "ВКЛ" : "ВЫКЛ"}`,
+            ].join("\n");
+        });
+        await replyMenu(
+            ctx,
+            [
+                panelTitle(`🚰 ${detail.name || `#${deviceId}`}`, "Септик"),
+                lines.map(escapeHtml).join("\n\n"),
+                `${panelDivider()}\nВсего: ${list.length}   Предупреждения: ${warnings}   Аварии: ${alarms}`,
+            ].join("\n\n"),
+            this.buildKeyboard(
+                detail,
+                controllersCallbackData,
+                mainMenuCallbackData,
+            ),
+        );
+    }
+
+    async openItem(
+        ctx,
+        {
+            deviceId,
+            nodeId = null,
+            itemId,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        },
+    ) {
+        const detail = await getScopedDetail(deviceId, nodeId, user);
+        if (!detail) {
+            await replyMenu(
+                ctx,
+                "Устройство недоступно.",
+                new InlineKeyboard().text("🏘 К началу", mainMenuCallbackData),
+            );
+            return;
+        }
+        const item = this.findItem(detail, itemId);
+        if (!item) {
+            await replyMenu(
+                ctx,
+                "Септик не найден.",
+                this.buildBackKeyboard(
+                    deviceId,
+                    nodeId,
+                    controllersCallbackData,
+                    mainMenuCallbackData,
+                ),
+            );
+            return;
+        }
+        const id = Number(item?.id);
+        const lines = [
+            panelTitle(
+                `🚰 ${itemName(item, `Септик ${id}`)}`,
+                `${detail.name || `#${deviceId}`}`,
+            ),
+            `${levelIcon(item)} Уровень: <b>${escapeHtml(levelLabel(item))}</b>`,
+            `${monitorOn(item) ? "🟢" : "⚪"} Мониторинг: <b>${monitorOn(item) ? "ВКЛ" : "ВЫКЛ"}</b>`,
+            `${item?.warning ? "🟠" : "⚪"} Предупреждение: <b>${item?.warning ? "ДА" : "НЕТ"}</b>`,
+            `${item?.alarm ? "🔴" : "⚪"} Авария: <b>${item?.alarm ? "ДА" : "НЕТ"}</b>`,
+        ];
+        await replyMenu(
+            ctx,
+            lines.join("\n"),
+            this.buildItemKeyboard(
+                detail,
+                item,
+                controllersCallbackData,
+                mainMenuCallbackData,
+            ),
+        );
+    }
+
+    async toggleMonitor(
+        ctx,
+        {
+            deviceId,
+            nodeId = null,
+            itemId,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        },
+    ) {
+        const detail = await getScopedDetail(deviceId, nodeId, user);
+        const item = this.findItem(detail, itemId);
+        if (!detail || !item) {
+            await ctx.answerCallbackQuery({
+                text: "Септик недоступен",
+                show_alert: true,
+            });
+            return;
+        }
+        const nextState = monitorOn(item) ? "off" : "on";
+        const summary = await this.registry.buildSummary(
+            deviceId,
+            this.devicesDb,
+        );
+        if (
+            !summary ||
+            !canSendControllerCommand(summary, user || {}, "septic", "monitor", {
+                id: Number(itemId),
+                state: nextState,
+            })
+        ) {
+            await ctx.answerCallbackQuery({
+                text: "Нет прав на управление",
+                show_alert: true,
+            });
+            return;
+        }
+        const result = this.deviceWs?.sendCmd(
+            Number(deviceId),
+            "septic",
+            "monitor",
+            { id: Number(itemId), state: nextState },
+            {
+                uid: user?.username || user?.plc_username || "",
+                username: user?.username || "",
+                plc_username: user?.plc_username || "",
+                source: "telegram",
+                session_id: `tg:${String(user?.chat_id || "")}`,
+            },
+            nodeId ? "stack" : "local",
+            nodeId || undefined,
+        );
+        if (!result?.ok) {
+            await ctx.answerCallbackQuery({
+                text: "Команда не отправлена",
+                show_alert: true,
+            });
+            return;
+        }
+        this.deviceWs?.sendGet(
+            Number(deviceId),
+            ["controllers"],
+            nodeId ? "stack" : "local",
+            nodeId || undefined,
+        );
+        await ctx.answerCallbackQuery({
+            text: nextState === "on" ? "Мониторинг включаю..." : "Мониторинг выключаю...",
+        });
+        await this.replyPatchedItem(
+            ctx,
+            detail,
+            itemId,
+            (current) => ({ ...current, monitoring_on: nextState === "on" }),
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        );
+    }
+
+    findItem(detail, itemId) {
+        const list = Array.isArray(detail?.controllers?.septic)
+            ? detail.controllers.septic
+            : [];
+        return list.find((item) => Number(item?.id) === Number(itemId)) || null;
+    }
+
+    patchItem(detail, itemId, updater) {
+        return {
+            ...detail,
+            controllers: {
+                ...(detail?.controllers || {}),
+                septic: Array.isArray(detail?.controllers?.septic)
+                    ? detail.controllers.septic.map((item) =>
+                          Number(item?.id) === Number(itemId)
+                              ? updater({ ...item })
+                              : item,
+                      )
+                    : [],
+            },
+        };
+    }
+
+    async replyPatchedItem(
+        ctx,
+        detail,
+        itemId,
+        updater,
+        replyMenu,
+        mainMenuCallbackData,
+        controllersCallbackData,
+    ) {
+        const patched = this.patchItem(detail, itemId, updater);
+        const item = this.findItem(patched, itemId);
+        if (!item) return;
+        const id = Number(item?.id);
+        const lines = [
+            panelTitle(
+                `🚰 ${itemName(item, `Септик ${id}`)}`,
+                `${patched.name || `#${patched.device_id}`}`,
+            ),
+            `${levelIcon(item)} Уровень: <b>${escapeHtml(levelLabel(item))}</b>`,
+            `${monitorOn(item) ? "🟢" : "⚪"} Мониторинг: <b>${monitorOn(item) ? "ВКЛ" : "ВЫКЛ"}</b>`,
+            `${item?.warning ? "🟠" : "⚪"} Предупреждение: <b>${item?.warning ? "ДА" : "НЕТ"}</b>`,
+            `${item?.alarm ? "🔴" : "⚪"} Авария: <b>${item?.alarm ? "ДА" : "НЕТ"}</b>`,
+        ];
+        await replyMenu(
+            ctx,
+            lines.join("\n"),
+            this.buildItemKeyboard(
+                patched,
+                item,
+                controllersCallbackData,
+                mainMenuCallbackData,
+            ),
+        );
+    }
+
+    buildKeyboard(detail, controllersCallbackData, mainMenuCallbackData) {
+        const keyboard = new InlineKeyboard();
+        const list = Array.isArray(detail?.controllers?.septic)
+            ? detail.controllers.septic
+            : [];
+        const deviceId = Number(detail?.device_id);
+        const nodeId = Number(detail?.node_id || 0);
+        const buttons = [];
+        for (const item of list) {
+            const id = Number(item?.id);
+            if (!Number.isFinite(id)) continue;
+            buttons.push({
+                label: buttonLabel(item, `Септик ${id}`),
+                data: this.itemCallbackData(deviceId, nodeId, id),
+            });
+        }
+        for (let i = 0; i < buttons.length; i += 2) {
+            const left = buttons[i];
+            const right = buttons[i + 1];
+            keyboard.text(left.label, left.data);
+            if (right) keyboard.text(right.label, right.data);
+            keyboard.row();
+        }
+        keyboard
+            .text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId))
+            .row();
+        keyboard.text("🏘 К началу", mainMenuCallbackData);
+        return keyboard;
+    }
+
+    buildItemKeyboard(
+        detail,
+        item,
+        controllersCallbackData,
+        mainMenuCallbackData,
+    ) {
+        const keyboard = new InlineKeyboard();
+        const deviceId = Number(detail?.device_id);
+        const nodeId = Number(detail?.node_id || 0);
+        const itemId = Number(item?.id);
+        keyboard
+            .text(
+                monitorOn(item)
+                    ? "⏻ Выключить мониторинг"
+                    : "⏻ Включить мониторинг",
+                this.monitorCallbackData(deviceId, nodeId, itemId),
+            )
+            .row();
+        keyboard
+            .text(
+                "🚰 К списку септика",
+                this.controllerCallbackData(deviceId, nodeId),
+            )
+            .row();
+        keyboard
+            .text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId))
+            .row();
+        keyboard.text("🏘 К началу", mainMenuCallbackData);
+        return keyboard;
+    }
+
+    buildBackKeyboard(
+        deviceId,
+        nodeId,
+        controllersCallbackData,
+        mainMenuCallbackData,
+    ) {
+        return new InlineKeyboard()
+            .text(
+                "🧩 Контроллеры",
+                controllersCallbackData(deviceId, nodeId || 0),
+            )
+            .row()
+            .text("🏘 К началу", mainMenuCallbackData);
+    }
+
+    controllerCallbackData(deviceId, nodeId = 0) {
+        return `menu:controller:${Number(deviceId)}:${Number(nodeId || 0)}:septic`;
+    }
+
+    itemCallbackData(deviceId, nodeId = 0, itemId) {
+        return `menu:septic:view:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}`;
+    }
+
+    monitorCallbackData(deviceId, nodeId = 0, itemId) {
+        return `menu:septic:monitor:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}`;
+    }
+
+    delay(ms) {
+        return new Promise((resolve) =>
+            setTimeout(resolve, Math.max(0, Number(ms) || 0)),
+        );
+    }
+}

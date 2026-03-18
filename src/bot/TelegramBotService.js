@@ -20,6 +20,14 @@ import { TgSocketMenu } from "./menu/TgSocketMenu.js";
 import { TgLightMenu } from "./menu/TgLightMenu.js";
 import { TgQuickActionMenu } from "./menu/TgQuickActionMenu.js";
 import { TgMeteoMenu } from "./menu/TgMeteoMenu.js";
+import { TgThermoMenu } from "./menu/TgThermoMenu.js";
+import { TgTankMenu } from "./menu/TgTankMenu.js";
+import { TgSepticMenu } from "./menu/TgSepticMenu.js";
+import { TgWateringMenu } from "./menu/TgWateringMenu.js";
+import {
+    eventPolicyKey,
+    isEventAllowedByPrefs,
+} from "../notifications/NotificationCatalog.js";
 
 const logger = rootLogger.child("TG_BOT");
 const CALLBACK_PREFIX = "menu";
@@ -88,6 +96,42 @@ function safeText(value, fallback = "-") {
     return raw || fallback;
 }
 
+function boolLabel(value, yes = "да", no = "нет") {
+    return value ? yes : no;
+}
+
+function deviceTitle(summary) {
+    return escapeHtml(summary?.name || `#${summary?.device_id}`);
+}
+
+function objectTitle(summary) {
+    return escapeHtml(summary?.object_name || "-");
+}
+
+function eventScopeLabel(eventPayload, data) {
+    const unit = String(eventPayload?.unit || "").trim().toLowerCase();
+    if (unit !== "stack") return "";
+    const unitName = String(data?.unit_name || "").trim();
+    const nodeId = Number(eventPayload?.node_id || 0);
+    return unitName || (nodeId ? `#${nodeId}` : "stack");
+}
+
+function eventSourceLabel(summary, eventPayload, data) {
+    const sourceName = String(data?.source_name || "").trim();
+    if (sourceName) return sourceName;
+    const scope = eventScopeLabel(eventPayload, data);
+    if (scope) return scope;
+    return String(summary?.name || "").trim();
+}
+
+function eventItemLabel(data, fallback) {
+    const name = String(data?.name || "").trim();
+    if (name) return name;
+    const id = Number(data?.id || data?.sensor_id || 0);
+    if (id > 0 && fallback) return `${fallback} #${id}`;
+    return fallback || "элемент";
+}
+
 export class TelegramBotService {
     constructor({ telegramConfigDb, usersDb, devicesDb, registry }) {
         this.telegramConfigDb = telegramConfigDb;
@@ -107,8 +151,17 @@ export class TelegramBotService {
         this.lightMenu = new TgLightMenu({ registry, devicesDb });
         this.quickActionMenu = new TgQuickActionMenu({ registry, devicesDb });
         this.meteoMenu = new TgMeteoMenu({ registry, devicesDb });
+        this.thermoMenu = new TgThermoMenu({ registry, devicesDb });
+        this.tankMenu = new TgTankMenu({ registry, devicesDb });
+        this.septicMenu = new TgSepticMenu({ registry, devicesDb });
+        this.wateringMenu = new TgWateringMenu({ registry, devicesDb });
         this.lastSummaryByDevice = new Map();
         this.lastEventSignatureByDevice = new Map();
+        this.lastChat = {
+            chat_id: "",
+            telegram_username: "",
+            seen_at: "",
+        };
     }
 
     setDeviceWs(deviceWs) {
@@ -116,6 +169,10 @@ export class TelegramBotService {
         this.socketMenu.setDeviceWs(deviceWs);
         this.lightMenu.setDeviceWs(deviceWs);
         this.quickActionMenu.setDeviceWs(deviceWs);
+        this.thermoMenu.setDeviceWs(deviceWs);
+        this.tankMenu.setDeviceWs(deviceWs);
+        this.septicMenu.setDeviceWs(deviceWs);
+        this.wateringMenu.setDeviceWs(deviceWs);
     }
 
     isEnabled() {
@@ -151,6 +208,9 @@ export class TelegramBotService {
                 "Контроллеры устройства",
             ],
             notifications_ready: true,
+            last_chat_id: this.lastChat.chat_id || "",
+            last_chat_username: this.lastChat.telegram_username || "",
+            last_chat_seen_at: this.lastChat.seen_at || "",
         };
     }
 
@@ -161,11 +221,10 @@ export class TelegramBotService {
             (await this.registry.buildSummary(deviceId, this.devicesDb));
         if (!effectiveSummary) return;
         this.lastSummaryByDevice.set(Number(deviceId), effectiveSummary);
-        await this.broadcastNotification(effectiveSummary, (sanitized) =>
+        await this.broadcastNotification("online", effectiveSummary, (sanitized) =>
             [
-                `Устройство <b>${escapeHtml(sanitized.name || `#${sanitized.device_id}`)}</b> онлайн`,
+                `🟢 Устройство <b>${escapeHtml(sanitized.name || `#${sanitized.device_id}`)}</b> онлайн`,
                 `Объект: <b>${escapeHtml(sanitized.object_name || "-")}</b>`,
-                `ID: <code>${escapeHtml(sanitized.device_id)}</code>`,
             ].join("\n"),
         );
     }
@@ -191,11 +250,10 @@ export class TelegramBotService {
                   }
                 : null);
         if (!summary) return;
-        await this.broadcastNotification(summary, (sanitized) =>
+        await this.broadcastNotification("offline", summary, (sanitized) =>
             [
-                `Устройство <b>${escapeHtml(sanitized.name || `#${sanitized.device_id}`)}</b> оффлайн`,
+                `⚪ Устройство <b>${escapeHtml(sanitized.name || `#${sanitized.device_id}`)}</b> оффлайн`,
                 `Объект: <b>${escapeHtml(sanitized.object_name || "-")}</b>`,
-                `ID: <code>${escapeHtml(sanitized.device_id)}</code>`,
             ].join("\n"),
         );
     }
@@ -218,23 +276,47 @@ export class TelegramBotService {
         });
         if (this.lastEventSignatureByDevice.get(deviceId) === signature) return;
         this.lastEventSignatureByDevice.set(deviceId, signature);
-        await this.broadcastNotification(summary, (sanitized) =>
+        await this.broadcastNotification("event", summary, (sanitized) =>
             this.buildEventNotificationText(sanitized),
         );
     }
 
-    async broadcastNotification(summary, textBuilder) {
+    async broadcastNotification(type, summary, textBuilder) {
         if (!this.bot) return;
         const users = await this.usersDb.listUsers();
         const recipients = users.filter((user) => {
             if (!String(user?.chat_id || "").trim()) return false;
             if (!String(user?.plc_username || "").trim()) return false;
+            if (type === "online" && !Boolean(user?.telegram_notify_online))
+                return false;
+            if (type === "offline" && !Boolean(user?.telegram_notify_offline))
+                return false;
+            if (type === "event" && !Boolean(user?.telegram_notify_events))
+                return false;
+            if (
+                type === "event" &&
+                !isEventAllowedByPrefs(summary?.last_event, user?.notification_prefs)
+            ) {
+                return false;
+            }
             return Boolean(
                 sanitizeSummaryForSession(summary, {
                     plc_username: user.plc_username,
                 }),
             );
         });
+        const eventDetails = this.describeNotificationEvent(summary, type);
+        logger.info(
+            [
+                "telegram notification:",
+                `type: ${type}`,
+                `device_id: ${Number(summary?.device_id || 0) || "-"}`,
+                `device: ${safeText(summary?.name || `#${summary?.device_id}`)}`,
+                `object: ${safeText(summary?.object_name)}`,
+                `recipients: ${recipients.length}`,
+                ...eventDetails,
+            ].join(" "),
+        );
         for (const user of recipients) {
             const sanitized = sanitizeSummaryForSession(summary, {
                 plc_username: user.plc_username,
@@ -247,9 +329,14 @@ export class TelegramBotService {
             if (!text) continue;
             await this.bot.api
                 .sendMessage(String(user.chat_id), text, { parse_mode: "HTML" })
+                .then(() => {
+                    logger.info(
+                        `telegram notification sent: type: ${type} recipient: ${this.describeTelegramUser(user)} device_id: ${Number(summary?.device_id || 0) || "-"}`,
+                    );
+                })
                 .catch((err) => {
                     logger.warn(
-                        `telegram notify failed for ${user.username || user.chat_id}: ${err?.message || "unknown_error"}`,
+                        `telegram notification failed: type: ${type} recipient: ${this.describeTelegramUser(user)} error: ${err?.message || "unknown_error"}`,
                     );
                 });
         }
@@ -263,14 +350,140 @@ export class TelegramBotService {
             eventPayload.data && typeof eventPayload.data === "object"
                 ? eventPayload.data
                 : {};
+        const source = eventSourceLabel(summary, eventPayload, data);
+        const header = [
+            `Устройство: <b>${deviceTitle(summary)}</b>`,
+            `Объект: <b>${objectTitle(summary)}</b>`,
+        ];
+        if (source) header.push(`Источник: <b>${escapeHtml(source)}</b>`);
+
+        let title = "";
+
+        if (kind === "sockets.state" || kind === "lights.state") {
+            const item = eventItemLabel(
+                data,
+                kind === "lights.state" ? "Свет" : "Розетка",
+            );
+            const state = data.state ? "включен" : "выключен";
+            const icon = kind === "lights.state"
+                ? data.state ? "💡" : "🌑"
+                : data.state ? "🔌" : "🔌";
+            title = `${icon} <b>${escapeHtml(item)}</b> ${state}`;
+        } else if (kind === "meteo.sensor") {
+            const item = eventItemLabel(data, "Датчик");
+            title =
+                reason === "alarm"
+                    ? `⚠️ Ошибка датчика <b>${escapeHtml(item)}</b>`
+                    : `✅ Датчик <b>${escapeHtml(item)}</b> восстановлен`;
+        } else if (kind === "thermo.power") {
+            const item = eventItemLabel(data, "Термостат");
+            title = `${data.power_on ? "🌡️" : "⏹️"} Термостат <b>${escapeHtml(item)}</b> ${data.power_on ? "включен" : "выключен"}`;
+        } else if (kind === "tanks.level") {
+            const item = eventItemLabel(data, "Бак");
+            title =
+                reason === "empty" || data.empty
+                    ? `🛢️ Бак <b>${escapeHtml(item)}</b> пуст`
+                    : `🛢️ Состояние бака <b>${escapeHtml(item)}</b> изменилось`;
+        } else if (kind === "septic.level") {
+            const item = eventItemLabel(data, "Септик");
+            title =
+                reason === "alarm" || data.alarm
+                    ? `🚨 Тревога септика <b>${escapeHtml(item)}</b>`
+                    : `🚰 Предупреждение септика <b>${escapeHtml(item)}</b>`;
+        } else if (kind === "security.arm") {
+            title = `${data.armed ? "🔐" : "🔓"} Охрана ${data.armed ? "включена" : "снята"}`;
+        } else if (kind === "security.alarm") {
+            title =
+                reason === "alarm" || data.alarm_on
+                    ? "🚨 Охранная тревога"
+                    : "✅ Охранная тревога сброшена";
+        } else if (kind === "security.detect") {
+            const item = eventItemLabel(data, "Датчик");
+            if (reason === "clear") {
+                title = "✅ Сработки охраны очищены";
+            } else if (reason === "silent" || data.silent) {
+                title = `🕵️ Тихое срабатывание <b>${escapeHtml(item)}</b>`;
+            } else {
+                title = `🚨 Сработка охраны: <b>${escapeHtml(item)}</b>`;
+            }
+        } else if (kind === "watering.rule") {
+            const item = eventItemLabel(data, "Правило");
+            const actions = {
+                start: "запущен",
+                pause_empty: "поставлен на паузу из-за пустого бака",
+                resume: "возобновлен",
+                stop: "остановлен",
+                stop_empty: "остановлен из-за пустого бака",
+                stop_done: "завершён",
+            };
+            const icon =
+                reason === "start" ? "💧"
+                : reason === "resume" ? "▶️"
+                : reason === "pause_empty" ? "⏸️"
+                : reason === "stop_done" ? "✅"
+                : reason === "stop_empty" ? "🛑"
+                : "🚿";
+            title = `${icon} Полив <b>${escapeHtml(item)}</b> ${actions[reason] || "изменился"}`;
+        } else if (kind === "ring.hold") {
+            title = `${reason === "start" || data.hold_on ? "🔔" : "🔕"} Звонок ${reason === "start" || data.hold_on ? "включен" : "выключен"}`;
+        } else if (kind === "avr.main") {
+            title =
+                reason === "lost"
+                    ? "🔴 Основной ввод пропал"
+                    : reason === "restored"
+                      ? "🟢 Основной ввод восстановлен"
+                      : "⚙️ Состояние основного ввода изменилось";
+        } else if (kind === "avr.source") {
+            const source = String(data.active_source || "").trim();
+            title = source
+                ? `🔀 АВР переключен на <b>${escapeHtml(source)}</b>`
+                : "🔀 АВР переключил источник";
+        } else if (kind === "avr.fault") {
+            const fault = String(data.fault || "").trim();
+            title = fault && fault !== "none"
+                ? `🚨 Ошибка АВР: <b>${escapeHtml(fault)}</b>`
+                : "✅ Ошибка АВР очищена";
+        } else if (kind === "leak.zone") {
+            const item = eventItemLabel(data, "Зона");
+            title =
+                reason === "detect" || data.wet
+                    ? `💦 Протечка: <b>${escapeHtml(item)}</b>`
+                    : `✅ Протечка подтверждена: <b>${escapeHtml(item)}</b>`;
+        } else if (kind === "rules.trigger") {
+            const ruleName = String(data.rule_name || "").trim();
+            title = ruleName
+                ? `📜 Сработало правило <b>${escapeHtml(ruleName)}</b>`
+                : "📜 Сработало правило";
+        } else if (kind === "stack.node") {
+            const unitName = String(data.unit_name || "").trim();
+            title = `${data.online ? "🟢" : "⚪"} Узел <b>${escapeHtml(unitName || scope || "stack")}</b> ${data.online ? "онлайн" : "оффлайн"}`;
+        }
+
+        if (title) {
+            const lines = [title, ...header];
+            const extras = [];
+            if (kind === "avr.source") {
+                if (data.main_ok !== undefined)
+                    extras.push(`Основной ввод: <b>${escapeHtml(boolLabel(data.main_ok, "OK", "нет"))}</b>`);
+                if (data.reserve_ok !== undefined)
+                    extras.push(`Резервный ввод: <b>${escapeHtml(boolLabel(data.reserve_ok, "OK", "нет"))}</b>`);
+            } else if (kind === "security.detect" && data.silent !== undefined) {
+                extras.push(`Тихий режим: <b>${escapeHtml(boolLabel(data.silent, "да", "нет"))}</b>`);
+            }
+            if (extras.length) {
+                lines.push("");
+                lines.push(...extras);
+            }
+            return lines.join("\n");
+        }
+
         const lines = [
-            `Событие на <b>${escapeHtml(summary.name || `#${summary.device_id}`)}</b>`,
-            `Объект: <b>${escapeHtml(summary.object_name || "-")}</b>`,
+            `Событие на <b>${deviceTitle(summary)}</b>`,
+            `Объект: <b>${objectTitle(summary)}</b>`,
             `Тип: <b>${escapeHtml(kind)}</b>`,
         ];
-        if (reason) {
-            lines.push(`Причина: <b>${escapeHtml(reason)}</b>`);
-        }
+        if (reason) lines.push(`Причина: <b>${escapeHtml(reason)}</b>`);
+        if (scope) lines.push(`Узел: <b>${escapeHtml(scope)}</b>`);
         const details = [];
         for (const [key, value] of Object.entries(data).slice(0, 6)) {
             if (value && typeof value === "object") continue;
@@ -353,6 +566,11 @@ export class TelegramBotService {
     }
 
     installHandlers() {
+        this.bot.use(async (ctx, next) => {
+            this.rememberLastChat(ctx);
+            await next();
+        });
+
         this.bot.command("start", async (ctx) => {
             const user = await this.requireLinkedUser(ctx);
             if (!user) return;
@@ -386,7 +604,7 @@ export class TelegramBotService {
                 ctx,
                 user,
                 "command_devices",
-                `object=${objectName || "-"}`,
+                `object: ${objectName || "-"}`,
             );
             if (!objectName) {
                 await this.sendObjectsList(
@@ -408,7 +626,7 @@ export class TelegramBotService {
                 ctx,
                 user,
                 "command_status",
-                `device_id=${Number.isFinite(deviceId) ? deviceId : "-"}`,
+                `device_id: ${Number.isFinite(deviceId) ? deviceId : "-"}`,
             );
             if (!Number.isFinite(deviceId)) {
                 await this.replyMenu(
@@ -529,7 +747,7 @@ export class TelegramBotService {
                     ctx,
                     user,
                     "select_object",
-                    `index=${objectIndex} object=${objectName || "-"}`,
+                    `index: ${objectIndex} object: ${objectName || "-"}`,
                 );
                 if (!objectName) {
                     await this.replyMenu(
@@ -567,7 +785,7 @@ export class TelegramBotService {
                     ctx,
                     user,
                     "select_device",
-                    `device_id=${deviceId} node_id=${nodeId || 0}`,
+                    `device_id: ${deviceId} node_id: ${nodeId || 0}`,
                 );
                 await this.sendControllersList(
                     ctx,
@@ -588,7 +806,7 @@ export class TelegramBotService {
 
         this.bot.callbackQuery(
             new RegExp(
-                `^${CALLBACK_CONTROLLER_PREFIX}(\\d+):(\\d+):(sockets|lights|meteo)$`,
+                `^${CALLBACK_CONTROLLER_PREFIX}(\\d+):(\\d+):(sockets|lights|meteo|thermo|tanks|septic|watering)$`,
             ),
             async (ctx) => {
                 await ctx.answerCallbackQuery();
@@ -607,7 +825,7 @@ export class TelegramBotService {
                     ctx,
                     user,
                     "open_controller",
-                    `device_id=${deviceId} node_id=${nodeId || 0} controller=${controller}`,
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} controller: ${controller}`,
                 );
                 if (controller === "sockets") {
                     await this.socketMenu.open(ctx, {
@@ -637,9 +855,582 @@ export class TelegramBotService {
                     });
                     return;
                 }
+                if (controller === "thermo") {
+                    await this.thermoMenu.open(ctx, {
+                        deviceId,
+                        nodeId: nodeId > 0 ? nodeId : null,
+                        user,
+                        getScopedDetail:
+                            this.getScopedTelegramDetail.bind(this),
+                        replyMenu: this.replyMenu.bind(this),
+                        mainMenuCallbackData: CALLBACK_MAIN,
+                        controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                            `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                    });
+                    return;
+                }
+                if (controller === "tanks") {
+                    await this.tankMenu.open(ctx, {
+                        deviceId,
+                        nodeId: nodeId > 0 ? nodeId : null,
+                        user,
+                        getScopedDetail:
+                            this.getScopedTelegramDetail.bind(this),
+                        replyMenu: this.replyMenu.bind(this),
+                        mainMenuCallbackData: CALLBACK_MAIN,
+                        controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                            `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                    });
+                    return;
+                }
+                if (controller === "septic") {
+                    await this.septicMenu.open(ctx, {
+                        deviceId,
+                        nodeId: nodeId > 0 ? nodeId : null,
+                        user,
+                        getScopedDetail:
+                            this.getScopedTelegramDetail.bind(this),
+                        replyMenu: this.replyMenu.bind(this),
+                        mainMenuCallbackData: CALLBACK_MAIN,
+                        controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                            `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                    });
+                    return;
+                }
+                if (controller === "watering") {
+                    await this.wateringMenu.open(ctx, {
+                        deviceId,
+                        nodeId: nodeId > 0 ? nodeId : null,
+                        user,
+                        getScopedDetail:
+                            this.getScopedTelegramDetail.bind(this),
+                        replyMenu: this.replyMenu.bind(this),
+                        mainMenuCallbackData: CALLBACK_MAIN,
+                        controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                            `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                    });
+                    return;
+                }
                 await this.lightMenu.open(ctx, {
                     deviceId,
                     nodeId: nodeId > 0 ? nodeId : null,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:watering:view:(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                await ctx.answerCallbackQuery();
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "open_watering_item",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId}`,
+                );
+                await this.wateringMenu.openItem(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:watering:slot:(\\d+):(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                await ctx.answerCallbackQuery();
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                const slot = Number(
+                    Array.isArray(ctx.match) ? ctx.match[4] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "open_watering_slot",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId} slot: ${slot}`,
+                );
+                await this.wateringMenu.openSlotEditor(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    slot,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:watering:status:(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "watering_status_toggle",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId}`,
+                );
+                await this.wateringMenu.toggleStatus(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:watering:day:(\\d+):(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                const bit = Number(
+                    Array.isArray(ctx.match) ? ctx.match[4] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "watering_weekday_toggle",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId} bit: ${bit}`,
+                );
+                await this.wateringMenu.toggleWeekday(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    bit,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(
+                `^menu:watering:time:(\\d+):(\\d+):(\\d+):(\\d+):(-?\\d+):(-?\\d+)$`,
+            ),
+            async (ctx) => {
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                const slot = Number(
+                    Array.isArray(ctx.match) ? ctx.match[4] : "",
+                );
+                const hourDelta = Number(
+                    Array.isArray(ctx.match) ? ctx.match[5] : "",
+                );
+                const minuteDelta = Number(
+                    Array.isArray(ctx.match) ? ctx.match[6] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "watering_time_adjust",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId} slot: ${slot} dh: ${hourDelta} dm: ${minuteDelta}`,
+                );
+                await this.wateringMenu.adjustTime(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    slot,
+                    hourDelta,
+                    minuteDelta,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(
+                `^menu:watering:duration:(\\d+):(\\d+):(\\d+):(\\d+):(-?\\d+)$`,
+            ),
+            async (ctx) => {
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                const slot = Number(
+                    Array.isArray(ctx.match) ? ctx.match[4] : "",
+                );
+                const deltaMinutes = Number(
+                    Array.isArray(ctx.match) ? ctx.match[5] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "watering_duration_adjust",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId} slot: ${slot} delta: ${deltaMinutes}`,
+                );
+                await this.wateringMenu.adjustDuration(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    slot,
+                    deltaMinutes,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:septic:view:(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                await ctx.answerCallbackQuery();
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "open_septic_item",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId}`,
+                );
+                await this.septicMenu.openItem(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:septic:monitor:(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "septic_monitor_toggle",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId}`,
+                );
+                await this.septicMenu.toggleMonitor(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:tanks:view:(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                await ctx.answerCallbackQuery();
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "open_tank_item",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId}`,
+                );
+                await this.tankMenu.openItem(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:tanks:power:(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "tank_power_toggle",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId}`,
+                );
+                await this.tankMenu.togglePower(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:thermo:view:(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                await ctx.answerCallbackQuery();
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "open_thermo_item",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId}`,
+                );
+                await this.thermoMenu.openItem(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:thermo:power:(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "thermo_power_toggle",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId}`,
+                );
+                await this.thermoMenu.togglePower(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:thermo:mode:(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "thermo_mode_cycle",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId}`,
+                );
+                await this.thermoMenu.cycleMode(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:thermo:target:(\\d+):(\\d+):(\\d+):(-?\\d+)$`),
+            async (ctx) => {
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                const deltaTenths = Number(
+                    Array.isArray(ctx.match) ? ctx.match[4] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "thermo_target_adjust",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId} delta: ${deltaTenths}`,
+                );
+                await this.thermoMenu.adjustTarget(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    delta: deltaTenths / 10,
                     user,
                     getScopedDetail: this.getScopedTelegramDetail.bind(this),
                     replyMenu: this.replyMenu.bind(this),
@@ -673,7 +1464,7 @@ export class TelegramBotService {
                     ctx,
                     user,
                     "toggle_item",
-                    `device_id=${deviceId} node_id=${nodeId || 0} controller=${controller} id=${itemId}`,
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} controller: ${controller} id: ${itemId}`,
                 );
                 if (controller === "sockets") {
                     await this.socketMenu.toggle(ctx, {
@@ -725,7 +1516,7 @@ export class TelegramBotService {
                     ctx,
                     user,
                     "set_all",
-                    `device_id=${deviceId} node_id=${nodeId || 0} controller=${controller} state=${state}`,
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} controller: ${controller} state: ${state}`,
                 );
                 if (controller === "sockets") {
                     await this.socketMenu.setAll(ctx, {
@@ -776,7 +1567,7 @@ export class TelegramBotService {
                     ctx,
                     user,
                     "quick_action",
-                    `device_id=${deviceId} node_id=${nodeId || 0} preset=${preset}`,
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} preset: ${preset}`,
                 );
                 await this.quickActionMenu.run(ctx, {
                     deviceId,
@@ -805,7 +1596,7 @@ export class TelegramBotService {
         });
         if (user) return user;
         logger.warn(
-            `telegram access denied: tg=${telegramUsername || "-"} chat_id=${chatId || "-"}`,
+            `telegram access denied: tg: ${telegramUsername || "-"} chat_id: ${chatId || "-"}`,
         );
         await this.replyMenu(
             ctx,
@@ -952,23 +1743,6 @@ export class TelegramBotService {
     async replyMenu(ctx, text, keyboard = null, extraOptions = {}) {
         const options = { parse_mode: "HTML", ...extraOptions };
         if (keyboard) options.reply_markup = keyboard;
-        const canEdit =
-            Boolean(ctx?.callbackQuery?.message) &&
-            typeof ctx.editMessageText === "function";
-        if (canEdit) {
-            try {
-                await ctx.editMessageText(text, options);
-                return;
-            } catch (err) {
-                const message = String(err?.message || "");
-                if (message.toLowerCase().includes("message is not modified")) {
-                    return;
-                }
-                logger.warn(
-                    `telegram message edit failed, fallback to reply: ${message || "unknown_error"}`,
-                );
-            }
-        }
         await ctx.reply(text, options);
     }
 
@@ -1070,9 +1844,9 @@ export class TelegramBotService {
         const hasWatering =
             Array.isArray(detail?.controllers?.watering) &&
             detail.controllers.watering.length > 0;
-        const hasSecurity = Boolean(detail?.controllers?.security);
-        const hasRing = Boolean(detail?.controllers?.ring);
-        const hasAvr = Boolean(detail?.controllers?.avr);
+        const hasSecurity = Boolean(detail?.controllers?.security?.enabled);
+        const hasRing = Boolean(detail?.controllers?.ring?.enabled);
+        const hasAvr = Boolean(detail?.controllers?.avr?.enabled);
         const hasLeak =
             Array.isArray(detail?.controllers?.leak) &&
             detail.controllers.leak.length > 0;
@@ -1095,22 +1869,22 @@ export class TelegramBotService {
         if (hasThermo)
             controllerButtons.push({
                 label: "🌡 Термостаты",
-                data: `${CALLBACK_DEVICE_PREFIX}${deviceId}:${nodeId}`,
+                data: this.thermoMenu.controllerCallbackData(deviceId, nodeId),
             });
         if (hasTanks)
             controllerButtons.push({
                 label: "🛢 Баки",
-                data: `${CALLBACK_DEVICE_PREFIX}${deviceId}:${nodeId}`,
+                data: this.tankMenu.controllerCallbackData(deviceId, nodeId),
             });
         if (hasSeptic)
             controllerButtons.push({
                 label: "🚰 Септик",
-                data: `${CALLBACK_DEVICE_PREFIX}${deviceId}:${nodeId}`,
+                data: this.septicMenu.controllerCallbackData(deviceId, nodeId),
             });
         if (hasWatering)
             controllerButtons.push({
                 label: "💧 Полив",
-                data: `${CALLBACK_DEVICE_PREFIX}${deviceId}:${nodeId}`,
+                data: this.wateringMenu.controllerCallbackData(deviceId, nodeId),
             });
         if (hasSecurity)
             controllerButtons.push({
@@ -1162,6 +1936,16 @@ export class TelegramBotService {
         const parts = text.split(/\s+/);
         if (parts.length < 2) return "";
         return parts.slice(1).join(" ").trim();
+    }
+
+    rememberLastChat(ctx) {
+        const chatId = String(ctx?.from?.id || "").trim();
+        if (!chatId) return;
+        this.lastChat = {
+            chat_id: chatId,
+            telegram_username: String(ctx?.from?.username || "").trim(),
+            seen_at: new Date().toISOString(),
+        };
     }
 
     async listTelegramDevices(objectName, user = {}) {
@@ -1282,7 +2066,7 @@ export class TelegramBotService {
                           ? "На охране"
                           : "Снято"
                     : "-",
-                visible: Boolean(controllers.security),
+                visible: Boolean(controllers.security?.enabled),
             },
             {
                 title: "Звонок",
@@ -1291,14 +2075,14 @@ export class TelegramBotService {
                         ? "Вкл"
                         : "Выкл"
                     : "-",
-                visible: Boolean(controllers.ring),
+                visible: Boolean(controllers.ring?.enabled),
             },
             {
                 title: "АВР",
                 status: controllers.avr
                     ? `${controllers.avr.active_source || "-"}${controllers.avr.fault && controllers.avr.fault !== "none" ? ` / ${controllers.avr.fault}` : ""}`
                     : "-",
-                visible: Boolean(controllers.avr),
+                visible: Boolean(controllers.avr?.enabled),
             },
             {
                 title: "Протечки",
@@ -1327,7 +2111,7 @@ export class TelegramBotService {
         }
         if (access) {
             notes.push(
-                `acl: restricted=${access.restricted ? "yes" : "no"}, matched=${access.matched ? "yes" : "no"}, object=${access.objectAllowed ? "yes" : "no"}, device=${access.deviceAllowed ? "yes" : "no"}`,
+                `acl: restricted: ${access.restricted ? "yes" : "no"}, matched: ${access.matched ? "yes" : "no"}, object: ${access.objectAllowed ? "yes" : "no"}, device: ${access.deviceAllowed ? "yes" : "no"}`,
             );
             const readableControllers = Object.entries(access.controllers || {})
                 .filter(([, policy]) => Boolean(policy?.read))
@@ -1574,12 +2358,32 @@ export class TelegramBotService {
             "-";
         const chatId =
             String(user?.chat_id || ctx?.from?.id || "").trim() || "-";
-        return `${username} plc=${plcUsername} tg=${tgUsername} chat_id=${chatId}`;
+        return `${username} plc: ${plcUsername} tg: ${tgUsername} chat_id: ${chatId}`;
+    }
+
+    describeNotificationEvent(summary, type) {
+        if (type !== "event") return [];
+        const eventPayload = summary?.last_event || {};
+        const data =
+            eventPayload.data && typeof eventPayload.data === "object"
+                ? eventPayload.data
+                : {};
+        const details = [
+            `kind: ${safeText(eventPayload.kind)}`,
+            `reason: ${safeText(eventPayload.reason)}`,
+        ];
+        const policyKey = eventPolicyKey(eventPayload);
+        if (policyKey) details.push(`policy: ${policyKey}`);
+        const source = eventSourceLabel(summary, eventPayload, data);
+        if (source) details.push(`source: ${safeText(source)}`);
+        const item = eventItemLabel(data, "");
+        if (item) details.push(`item: ${safeText(item)}`);
+        return details;
     }
 
     logTelegramAction(ctx, user, action, details = "") {
         logger.info(
-            `telegram action: user=${this.describeTelegramUser(user, ctx)} action=${action}${details ? ` ${details}` : ""}`,
+            `telegram action: user: ${this.describeTelegramUser(user, ctx)} action: ${action}${details ? ` ${details}` : ""}`,
         );
     }
 

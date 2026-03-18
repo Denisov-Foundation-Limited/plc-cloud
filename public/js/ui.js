@@ -65,6 +65,89 @@ function formatTemperature(value, digits = null) {
     return `${text} &deg;C`;
 }
 
+function formatLastEvent(eventPayload) {
+    if (!eventPayload || typeof eventPayload !== "object") return "—";
+    const kind = String(eventPayload.kind || "event").trim() || "event";
+    const reason = String(eventPayload.reason || "").trim();
+    const unit = String(eventPayload.unit || "").trim().toLowerCase();
+    const data =
+        eventPayload.data && typeof eventPayload.data === "object"
+            ? eventPayload.data
+            : {};
+    const pieces = [kind];
+    if (reason) pieces.push(reason);
+    const sourceName = String(data.source_name || "").trim();
+    if (sourceName) {
+        pieces.push(sourceName);
+    } else if (unit === "stack") {
+        const unitName = String(data.unit_name || "").trim();
+        const nodeId = Number(eventPayload.node_id || 0);
+        pieces.push(unitName || (nodeId ? `stack #${nodeId}` : "stack"));
+    }
+    if (data.name) pieces.push(String(data.name));
+    if (typeof data.state === "boolean") pieces.push(data.state ? "on" : "off");
+    if (typeof data.alarm === "boolean") pieces.push(data.alarm ? "alarm" : "ok");
+    if (typeof data.empty === "boolean" && data.empty) pieces.push("empty");
+    return pieces.map((item) => esc(item)).join(" · ");
+}
+
+function wateringWeekdaysMask(item) {
+    const mask = Number(item?.weekdays_mask);
+    if (!Number.isFinite(mask)) return 0;
+    return mask & 0x7f;
+}
+
+function wateringWeekdayList(mask) {
+    const days = [
+        { bit: 1, label: "Пн" },
+        { bit: 2, label: "Вт" },
+        { bit: 3, label: "Ср" },
+        { bit: 4, label: "Чт" },
+        { bit: 5, label: "Пт" },
+        { bit: 6, label: "Сб" },
+        { bit: 0, label: "Вс" },
+    ];
+    return days.filter((day) => (mask & (1 << day.bit)) !== 0).map((day) => day.label);
+}
+
+function wateringTimeLabel(hour, minute) {
+    const h = Number(hour);
+    const m = Number(minute);
+    if (
+        !Number.isInteger(h) ||
+        !Number.isInteger(m) ||
+        h < 0 ||
+        h > 23 ||
+        m < 0 ||
+        m > 59
+    ) {
+        return "--:--";
+    }
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function wateringDurationLabel(seconds) {
+    const num = Number(seconds);
+    if (!Number.isFinite(num) || num <= 0) return "—";
+    return `${Math.round(num / 60)} мин`;
+}
+
+function wateringSlotConfigured(slot) {
+    const hour = Number(slot?.hour);
+    const minute = Number(slot?.minute);
+    const durationS = Number(slot?.duration_s);
+    return (
+        Number.isFinite(hour) &&
+        Number.isFinite(minute) &&
+        hour >= 0 &&
+        hour <= 23 &&
+        minute >= 0 &&
+        minute <= 59 &&
+        Number.isFinite(durationS) &&
+        durationS > 0
+    );
+}
+
 const OBJECT_ICON_OPTIONS = [
     { value: "apartment", label: "Квартира" },
     { value: "house", label: "Частный дом" },
@@ -206,7 +289,7 @@ function summarizeControllers(controllers = {}) {
                       : "Снято"
                 : "-",
             online: Boolean(controllers.security?.enabled),
-            visible: Boolean(controllers.security),
+            visible: Boolean(controllers.security?.enabled),
         },
         {
             key: "ring",
@@ -217,7 +300,7 @@ function summarizeControllers(controllers = {}) {
                     : "Выкл"
                 : "-",
             online: Boolean(controllers.ring?.enabled),
-            visible: Boolean(controllers.ring),
+            visible: Boolean(controllers.ring?.enabled),
         },
         {
             key: "avr",
@@ -226,7 +309,7 @@ function summarizeControllers(controllers = {}) {
                 ? `${controllers.avr.active_source || "-"}${controllers.avr.fault && controllers.avr.fault !== "none" ? ` / ${controllers.avr.fault}` : ""}`
                 : "-",
             online: Boolean(controllers.avr?.enabled),
-            visible: Boolean(controllers.avr),
+            visible: Boolean(controllers.avr?.enabled),
         },
         {
             key: "leak",
@@ -274,7 +357,7 @@ function thermoStatusVisualSvg(mode, heatOn, coolOn) {
     const coolSvg =
         '<svg class="icon cool ' +
         (coolOn ? "active" : "inactive") +
-        '" viewBox="0 0 120 120" aria-hidden="true"><rect x="18" y="28" width="84" height="46" rx="10"/><line x1="28" y1="44" x2="92" y2="44"/><line x1="28" y1="56" x2="92" y2="56"/><line x1="40" y1="78" x2="34" y2="92"/><line x1="60" y1="78" x2="60" y2="94"/><line x1="80" y1="78" x2="86" y2="92"/></svg>';
+        '" viewBox="0 0 120 120" aria-hidden="true"><rect x="20" y="32" width="80" height="40" rx="10"/><line x1="32" y1="46" x2="88" y2="46"/><line x1="32" y1="58" x2="88" y2="58"/><line x1="44" y1="78" x2="38" y2="92"/><line x1="60" y1="78" x2="60" y2="94"/><line x1="76" y1="78" x2="82" y2="92"/></svg>';
     if (normalized === "heat" || normalized === "heat_only") return heatSvg;
     if (normalized === "cool" || normalized === "cool_only") return coolSvg;
     if (normalized === "off") return "";
@@ -344,6 +427,9 @@ export class Ui {
         this.adminUsers = document.getElementById("adminUsers");
         this.objectForm = document.getElementById("objectForm");
         this.userForm = document.getElementById("userForm");
+        this.userAllowedObjects = document.getElementById(
+            "userAllowedObjects",
+        );
         this.deviceForm = document.getElementById("deviceForm");
         this.deviceObjectSelect = document.getElementById("deviceObjectSelect");
         this.telegramSettingsForm = document.getElementById(
@@ -988,6 +1074,7 @@ export class Ui {
         const rtcTemp = formatTemperature(rtc.temp_c);
         const boardTemp = formatTemperature(plc.board_temp, 1);
         const cpuTemp = formatTemperature(plc.cpu_temp);
+        const lastEvent = formatLastEvent(detail.last_event);
 
         this.deviceStatusBody.innerHTML = `
       <tr><td>Имя устройства</td><td><strong>${esc(detail.name || "-")}</strong></td></tr>
@@ -996,6 +1083,7 @@ export class Ui {
       <tr><td>RTC температура</td><td><strong>${rtcTemp}</strong></td></tr>
       <tr><td>Температура платы</td><td><strong>${boardTemp}</strong></td></tr>
       <tr><td>CPU</td><td><strong>${cpuTemp}</strong></td></tr>
+      <tr><td>Последнее событие</td><td><strong>${lastEvent}</strong></td></tr>
       <tr><td>Вентилятор</td><td>${onOffDot(Boolean(fan.fan_on))}</td></tr>
       <tr><td>Статус</td><td>${onOffDot(Boolean(detail.online))}</td></tr>
     `;
@@ -1416,10 +1504,17 @@ export class Ui {
         }
         const modeLabel = (mode) => {
             const m = String(mode || "off");
-            if (m === "heat_only") return "нагрев";
-            if (m === "cool_only") return "охлаждение";
-            if (m === "auto") return "авто";
-            return "выкл";
+            if (m === "heat_only") return "Нагрев";
+            if (m === "cool_only") return "Охлаждение";
+            if (m === "auto") return "Авто";
+            return "Выкл";
+        };
+        const modeIcon = (mode) => {
+            const m = String(mode || "off");
+            if (m === "heat_only") return "🔥";
+            if (m === "cool_only") return "❄️";
+            if (m === "auto") return "◌";
+            return "⏻";
         };
         this.deviceThermoGrid.innerHTML = list
             .map((item) => {
@@ -1429,24 +1524,48 @@ export class Ui {
                 const heatOn = Boolean(item?.heat_on);
                 const coolOn = Boolean(item?.cool_on);
                 const mode = String(item?.mode || "off");
-                const target = Number(item?.target_c);
-                const sensor = Number(item?.temp_c ?? item?.sensor_temp_c);
+                const target = Number(item?.target ?? item?.target_c);
+                const sensor = Number(
+                    item?.temp_c ?? item?.sensor_temp_c ?? item?.sensor_temp,
+                );
+                const sensorHasTemp = Boolean(
+                    item?.has_temp ??
+                        item?.sensor_has_temp ??
+                        Number.isFinite(sensor),
+                );
+                const sensorName = String(
+                    item?.sensor_name ?? item?.sensor_label ?? "",
+                ).trim();
                 const targetText = Number.isFinite(target)
                     ? target.toFixed(1)
                     : "--";
-                const sensorText = Number.isFinite(sensor)
+                const sensorText = sensorHasTemp && Number.isFinite(sensor)
                     ? sensor.toFixed(1)
                     : "--";
-                const statusText = heatOn
+                const sensorLabel = sensorName
+                    ? `Датчик: ${sensorName}`
+                    : `Датчик #${Number(item?.sensor || 0) || "?"}`;
+                const processText = heatOn
                     ? "нагрев"
                     : coolOn
                       ? "охлаждение"
                       : "ожидание";
-                const statusClass = heatOn
-                    ? "status-text-heat"
-                    : coolOn
-                      ? "status-text-cool"
-                      : "status-text-idle";
+                const processBadgeTone = !enabled
+                    ? "disabled"
+                    : heatOn
+                      ? "alert"
+                      : coolOn
+                        ? "ready"
+                        : powerOn
+                          ? "neutral"
+                          : "off";
+                const processIcon = !enabled
+                    ? "⏻"
+                    : heatOn
+                      ? "🔥"
+                      : coolOn
+                        ? "❄️"
+                        : "◌";
                 const powerWritable = controllerAccess(
                     detail,
                     "thermo",
@@ -1466,7 +1585,7 @@ export class Ui {
                     "target",
                 ).write;
                 return `
-        <article class="tile ${enabled && (powerWritable || modeWritable || targetWritable) ? "" : "disabled"}" data-thermo-id="${id}" data-power-on="${powerOn ? "1" : "0"}" data-mode="${esc(mode)}" data-target="${Number.isFinite(target) ? target.toFixed(1) : ""}">
+        <article class="tile thermo-card ${enabled && (powerWritable || modeWritable || targetWritable) ? "" : "disabled"}" data-thermo-id="${id}" data-power-on="${powerOn ? "1" : "0"}" data-mode="${esc(mode)}" data-target="${Number.isFinite(target) ? target.toFixed(1) : ""}">
           <div class="thermo-left">
             <div class="thermo-visual">
               <span class="socket-chip">#${id}</span>
@@ -1474,10 +1593,15 @@ export class Ui {
               ${thermoStatusVisualSvg(mode, heatOn, coolOn)}
               <span class="temp-pill target">Цель: <span class="temp-value">${esc(targetText)}</span>&deg;C</span>
             </div>
-            <div class="status-line">
-              <span class="status-dot ${heatOn ? "status-heat" : coolOn ? "status-cool" : "status-idle"}"></span>
-              <span class="status-value ${statusClass}">${statusText}</span>
-              <span class="badge">#${id}</span>
+            <div class="thermo-temp-summary">
+              <span class="metric-chip ${Number.isFinite(sensor) ? "is-running" : "is-off"}">
+                <span class="metric-label">Сейчас</span>
+                <span class="metric-value">${esc(sensorText)}&deg;C</span>
+              </span>
+              <span class="metric-chip ${powerOn ? "is-hot" : "is-off"}">
+                <span class="metric-label">Цель</span>
+                <span class="metric-value">${esc(targetText)}&deg;C</span>
+              </span>
             </div>
           </div>
           <div class="socket-main">
@@ -1485,17 +1609,54 @@ export class Ui {
               <div class="socket-name">${esc(item?.name || `Термо ${id}`)}</div>
               ${onOffDot(enabled)}
             </div>
-            <div class="metric-grid">
-              <span class="metric-chip ${powerOn ? "is-on" : "is-off"}"><span class="metric-label">Питание</span><span class="metric-value">${powerOn ? "ВКЛ" : "ВЫКЛ"}</span></span>
-              <span class="metric-chip is-running"><span class="metric-label">Режим</span><span class="metric-value">${modeLabel(mode)}</span></span>
-              <span class="metric-chip ${heatOn ? "is-hot" : "is-off"}"><span class="metric-label">Нагрев</span><span class="metric-value">${heatOn ? "ВКЛ" : "ВЫКЛ"}</span></span>
-              <span class="metric-chip ${coolOn ? "is-cool" : "is-off"}"><span class="metric-label">Охлаждение</span><span class="metric-value">${coolOn ? "ВКЛ" : "ВЫКЛ"}</span></span>
+            <div class="thermo-status-row">
+              ${statusBadge(`${processIcon} ${processText}`, processBadgeTone)}
+              <span class="thermo-mode-pill ${enabled ? "is-active" : "is-off"}">
+                <span class="thermo-mode-icon" aria-hidden="true">${modeIcon(mode)}</span>
+                <span>${esc(modeLabel(mode))}</span>
+              </span>
             </div>
-            <div class="socket-actions action-row">
-              <button class="ghost btn-sm ${powerOn ? "btn-off" : "btn-on"}" data-action="power-toggle" ${enabled && powerWritable ? "" : "disabled"}>${powerOn ? "Питание ВЫКЛ" : "Питание ВКЛ"}</button>
-              <button class="ghost btn-sm" data-action="mode-cycle" ${enabled && modeWritable ? "" : "disabled"}>Режим</button>
-              <button class="ghost btn-sm" data-action="target-down" ${enabled && targetWritable ? "" : "disabled"}>-0.5 &deg;C</button>
-              <button class="ghost btn-sm" data-action="target-up" ${enabled && targetWritable ? "" : "disabled"}>+0.5 &deg;C</button>
+            <div class="thermo-indicators">
+              <span class="thermo-indicator ${powerOn ? "is-active" : "is-idle"}">
+                <span class="thermo-indicator-dot" aria-hidden="true"></span>
+                <span class="thermo-indicator-label">Питание</span>
+              </span>
+              <span class="thermo-indicator ${heatOn ? "is-hot" : "is-idle"}">
+                <span class="thermo-indicator-dot" aria-hidden="true"></span>
+                <span class="thermo-indicator-label">Нагрев</span>
+              </span>
+              <span class="thermo-indicator ${coolOn ? "is-cool" : "is-idle"}">
+                <span class="thermo-indicator-dot" aria-hidden="true"></span>
+                <span class="thermo-indicator-label">Охлаждение</span>
+              </span>
+              <span class="thermo-indicator ${enabled ? "is-ready" : "is-disabled"}">
+                <span class="thermo-indicator-dot" aria-hidden="true"></span>
+                <span class="thermo-indicator-label">${enabled ? "Контур активен" : "Контур отключен"}</span>
+              </span>
+            </div>
+            <div class="socket-meta thermo-meta-line">
+              <span class="badge">ID ${id}</span>
+              <span class="meta-value">Режим работы: ${esc(modeLabel(mode))}</span>
+            </div>
+            <div class="socket-meta thermo-meta-line">
+              <span class="meta-value">${esc(sensorLabel)}</span>
+              <span class="meta-value">${sensorHasTemp ? `Температура: ${esc(sensorText)}°C` : "Температура: нет данных"}</span>
+            </div>
+            <div class="socket-actions thermo-actions-grid">
+              <button class="ghost btn-sm thermo-power-btn ${powerOn ? "btn-off" : "btn-on"}" data-action="power-toggle" ${enabled && powerWritable ? "" : "disabled"}>
+                ${powerOn ? "⏻ Выключить" : "⏻ Включить"}
+              </button>
+              <button class="ghost btn-sm thermo-mode-btn" data-action="mode-cycle" ${enabled && modeWritable ? "" : "disabled"}>
+                ${modeIcon(mode)} Сменить режим
+              </button>
+              <div class="thermo-adjust-group">
+                <button class="ghost btn-sm thermo-step-btn" data-action="target-down" ${enabled && targetWritable ? "" : "disabled"} aria-label="Уменьшить целевую температуру">−0.5</button>
+                <div class="thermo-target-chip">
+                  <span class="thermo-target-label">Цель</span>
+                  <span class="thermo-target-value">${esc(targetText)}&deg;C</span>
+                </div>
+                <button class="ghost btn-sm thermo-step-btn" data-action="target-up" ${enabled && targetWritable ? "" : "disabled"} aria-label="Увеличить целевую температуру">+0.5</button>
+              </div>
             </div>
           </div>
         </article>
@@ -1628,6 +1789,8 @@ export class Ui {
                 const active = Boolean(item?.active ?? item?.status);
                 const paused = Boolean(item?.paused);
                 const resume = Boolean(item?.resume);
+                const weekdaysMask = wateringWeekdaysMask(item);
+                const activeDays = wateringWeekdayList(weekdaysMask);
                 const left = Number(
                     item?.left_min ?? item?.left ?? item?.minutes_left,
                 );
@@ -1635,8 +1798,129 @@ export class Ui {
                     Number.isFinite(left) && left >= 0
                         ? `${Math.round(left)} мин`
                         : "-";
+                const tankName = String(item?.tank_name || "").trim();
+                const tankId = Number(item?.tank);
+                const tankLabel =
+                    tankName ||
+                    (Number.isFinite(tankId) && tankId > 0
+                        ? `Бак #${tankId}`
+                        : "не привязан");
+                const weekdayButtons = [
+                    { bit: 1, label: "Пн" },
+                    { bit: 2, label: "Вт" },
+                    { bit: 3, label: "Ср" },
+                    { bit: 4, label: "Чт" },
+                    { bit: 5, label: "Пт" },
+                    { bit: 6, label: "Сб" },
+                    { bit: 0, label: "Вс" },
+                ]
+                    .map((day) => {
+                        const checked = (weekdaysMask & (1 << day.bit)) !== 0;
+                        return `
+              <button
+                class="weekday-toggle ${checked ? "is-active" : ""}"
+                type="button"
+                data-action="weekday-toggle"
+                data-bit="${day.bit}"
+                ${enabled && writable ? "" : "disabled"}
+              >${checked ? "☑" : "☐"} ${day.label}</button>
+            `;
+                    })
+                    .join("");
+                const slots = [
+                    {
+                        slot: 1,
+                        hour: Number(item?.hour),
+                        minute: Number(item?.minute),
+                        duration_s: Number(item?.duration_s),
+                    },
+                    {
+                        slot: 2,
+                        hour: Number(item?.hour2),
+                        minute: Number(item?.minute2),
+                        duration_s: Number(item?.duration2_s),
+                    },
+                    {
+                        slot: 3,
+                        hour: Number(item?.hour3),
+                        minute: Number(item?.minute3),
+                        duration_s: Number(item?.duration3_s),
+                    },
+                ];
+                const scheduleSummary = slots
+                    .filter((slot) => wateringSlotConfigured(slot))
+                    .map(
+                        (slot) =>
+                            `${slot.slot}: ${wateringTimeLabel(slot.hour, slot.minute)} · ${wateringDurationLabel(slot.duration_s)}`,
+                    )
+                    .join("  •  ");
+                const slotsMarkup = slots
+                    .map((slot) => {
+                        const timeText = wateringTimeLabel(
+                            slot.hour,
+                            slot.minute,
+                        );
+                        const durationText = wateringDurationLabel(
+                            slot.duration_s,
+                        );
+                        const timeValue =
+                            timeText === "--:--" ? "00:00" : timeText;
+                        const durationMinutes = Math.max(
+                            0,
+                            Math.round(
+                                (Number.isFinite(slot.duration_s)
+                                    ? slot.duration_s
+                                    : 0) / 60,
+                            ),
+                        );
+                        const configured = wateringSlotConfigured(slot);
+                        const copyTargets = [1, 2, 3]
+                            .filter((targetSlot) => targetSlot !== slot.slot)
+                            .map(
+                                (targetSlot) => `
+                      <button class="ghost btn-sm watering-copy-btn" type="button" data-action="slot-copy" data-slot="${slot.slot}" data-target-slot="${targetSlot}" ${enabled && writable ? "" : "disabled"}>В слот ${targetSlot}</button>
+                    `,
+                            )
+                            .join("");
+                        return `
+              <div
+                class="watering-slot-card ${configured ? "is-configured" : ""}"
+                data-watering-slot="${slot.slot}"
+                data-hour="${Number.isFinite(slot.hour) ? slot.hour : 0}"
+                data-minute="${Number.isFinite(slot.minute) ? slot.minute : 0}"
+                data-duration-s="${Number.isFinite(slot.duration_s) ? slot.duration_s : 0}"
+              >
+                <div class="watering-slot-head">
+                  <span class="watering-slot-title">Слот ${slot.slot}</span>
+                  <span class="watering-slot-value">${esc(timeText)} · ${esc(durationText)}</span>
+                </div>
+                <div class="watering-slot-state">${configured ? "Настроен" : "Не задан"}</div>
+                <div class="watering-slot-editor">
+                  <label class="watering-slot-time">
+                    <span class="watering-slot-caption">Время старта</span>
+                    <input class="watering-time-input" type="time" value="${esc(timeValue)}" step="60" ${enabled && writable ? "" : "disabled"} />
+                  </label>
+                  <label class="watering-slot-duration">
+                    <span class="watering-slot-caption">Длительность, мин</span>
+                    <div class="watering-duration-editor">
+                      <button class="ghost btn-sm watering-duration-step" type="button" data-action="slot-duration-step" data-slot="${slot.slot}" data-duration-delta="-1" ${enabled && writable ? "" : "disabled"}>−</button>
+                      <input class="watering-duration-input" type="number" min="0" step="1" value="${durationMinutes}" ${enabled && writable ? "" : "disabled"} />
+                      <button class="ghost btn-sm watering-duration-step" type="button" data-action="slot-duration-step" data-slot="${slot.slot}" data-duration-delta="1" ${enabled && writable ? "" : "disabled"}>+</button>
+                    </div>
+                  </label>
+                </div>
+                <div class="watering-slot-actions">
+                  <button class="ghost btn-sm watering-save-btn" type="button" data-action="slot-save" data-slot="${slot.slot}" ${enabled && writable ? "" : "disabled"}>Сохранить слот</button>
+                </div>
+                <div class="watering-slot-copy-row">
+                  ${copyTargets}
+                </div>
+              </div>
+            `;
+                    })
+                    .join("");
                 return `
-        <article class="tile watering-item ${enabled && writable ? "" : "disabled"}" data-watering-id="${id}" data-status="${active ? "1" : "0"}" data-active="${active ? "1" : "0"}">
+        <article class="tile watering-item ${enabled && writable ? "" : "disabled"}" data-watering-id="${id}" data-status="${active ? "1" : "0"}" data-active="${active ? "1" : "0"}" data-weekdays-mask="${weekdaysMask}">
           <div class="thermo-left">
             <div class="watering-visual">
               <span class="socket-chip">#${id}</span>
@@ -1662,6 +1946,17 @@ export class Ui {
               <span class="metric-chip ${paused ? "is-warn" : "is-off"}"><span class="metric-label">Пауза</span><span class="metric-value">${paused ? "ДА" : "НЕТ"}</span></span>
               <span class="metric-chip ${resume ? "is-running" : "is-off"}"><span class="metric-label">Возобновление</span><span class="metric-value">${resume ? "ВКЛ" : "ВЫКЛ"}</span></span>
               <span class="metric-chip is-off"><span class="metric-label">Осталось</span><span class="metric-value">${esc(leftText)}</span></span>
+            </div>
+            <div class="watering-schedule-summary">
+              <span class="watering-summary-chip"><span class="metric-label">Дни</span><span class="metric-value">${esc(activeDays.length ? activeDays.join(", ") : "не выбраны")}</span></span>
+              <span class="watering-summary-chip watering-summary-chip-wide"><span class="metric-label">Расписание</span><span class="metric-value">${esc(scheduleSummary || "слоты пока не заданы")}</span></span>
+              <span class="watering-summary-chip"><span class="metric-label">Бак</span><span class="metric-value">${esc(tankLabel)}</span></span>
+            </div>
+            <div class="watering-weekdays">
+              ${weekdayButtons}
+            </div>
+            <div class="watering-slots">
+              ${slotsMarkup}
             </div>
             <div class="socket-actions action-row">
               <button class="ghost btn-sm ${active ? "btn-off" : "btn-on"}" data-action="status-toggle" ${enabled && writable ? "" : "disabled"}>${active ? "Статус ВЫКЛ" : "Статус ВКЛ"}</button>
@@ -2020,6 +2315,18 @@ export class Ui {
                     "Имя будет получено после успешного запуска",
                 tone: settings.bot_username ? "on" : "neutral",
             },
+            {
+                label: "Last Chat ID",
+                value: settings.last_chat_id || "—",
+                meta: settings.last_chat_id
+                    ? `Последний пользователь: ${settings.last_chat_username ? `@${settings.last_chat_username}` : "без username"}`
+                    : "Появится после первого сообщения или нажатия кнопки в Telegram",
+                tone: settings.last_chat_id ? "ready" : "neutral",
+                copyValue: settings.last_chat_id || "",
+                extraMeta: settings.last_chat_seen_at
+                    ? `Обновлено: ${new Date(settings.last_chat_seen_at).toLocaleString("ru-RU")}`
+                    : "",
+            },
         ];
         this.telegramSettingsInfo.innerHTML = infoRows
             .map(
@@ -2031,13 +2338,51 @@ export class Ui {
         </div>
         <div class="telegram-info-value">${esc(row.value)}</div>
         <div class="telegram-info-meta">${esc(row.meta)}</div>
+        ${row.copyValue ? `<input class="telegram-copy-input" type="text" readonly value="${esc(row.copyValue)}" />` : ""}
+        ${row.extraMeta ? `<div class="telegram-info-meta telegram-info-meta-secondary">${esc(row.extraMeta)}</div>` : ""}
       </div>
     `,
             )
             .join("");
     }
 
-    renderAdminUsers(users, onSave, onDelete) {
+    renderUserObjectSelector(objects, selected = []) {
+        if (!this.userAllowedObjects) return;
+        this.userAllowedObjects.innerHTML = "";
+        const selectedSet = new Set(
+            Array.isArray(selected) ? selected.map((item) => String(item)) : [],
+        );
+        const list = Array.isArray(objects) ? objects : [];
+        if (!list.length) {
+            this.userAllowedObjects.textContent = "Нет объектов";
+            return;
+        }
+        for (const objectItem of list) {
+            const name = String(
+                typeof objectItem === "string"
+                    ? objectItem
+                    : objectItem?.name || "",
+            ).trim();
+            if (!name) continue;
+            const line = document.createElement("label");
+            line.style.display = "inline-flex";
+            line.style.alignItems = "center";
+            line.style.gap = "8px";
+            line.style.margin = "0 12px 8px 0";
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.name = "allowed_objects";
+            input.value = name;
+            input.checked = selectedSet.has(name);
+            const text = document.createElement("span");
+            text.textContent = name;
+            line.appendChild(input);
+            line.appendChild(text);
+            this.userAllowedObjects.appendChild(line);
+        }
+    }
+
+    renderAdminUsers(users, objects, notificationCatalog, onSave, onDelete) {
         if (!this.adminUsers) return;
         this.adminUsers.innerHTML = "";
         if (!users.length) {
@@ -2080,6 +2425,26 @@ export class Ui {
             chatIdInput.className = "admin-object-select";
             chatIdInput.placeholder = "Chat ID";
             chatIdInput.value = user.chat_id || "";
+            const notifyOnlineInput = document.createElement("input");
+            notifyOnlineInput.type = "checkbox";
+            notifyOnlineInput.checked = Boolean(user.telegram_notify_online);
+            const notifyOfflineInput = document.createElement("input");
+            notifyOfflineInput.type = "checkbox";
+            notifyOfflineInput.checked = Boolean(user.telegram_notify_offline);
+            const notifyEventsInput = document.createElement("input");
+            notifyEventsInput.type = "checkbox";
+            notifyEventsInput.checked = Boolean(user.telegram_notify_events);
+            const rawNotificationPrefs = Array.isArray(user.notification_prefs)
+                ? user.notification_prefs.map((item) => String(item))
+                : [];
+            const notificationPrefs = new Set(rawNotificationPrefs);
+            const useAllNotificationItems = rawNotificationPrefs.length === 0;
+            const objectNames = Array.isArray(objects) ? objects : [];
+            const allowedObjectSet = new Set(
+                Array.isArray(user.allowed_objects)
+                    ? user.allowed_objects.map((item) => String(item))
+                    : [],
+            );
             const passwordInput = document.createElement("input");
             passwordInput.type = "password";
             passwordInput.className = "admin-object-select";
@@ -2100,10 +2465,115 @@ export class Ui {
             chatField.className = "admin-edit-field";
             chatField.innerHTML = "<span>Chat ID</span>";
             chatField.appendChild(chatIdInput);
+            const notifyOnlineField = document.createElement("label");
+            notifyOnlineField.className = "admin-edit-field";
+            notifyOnlineField.innerHTML = "<span>Telegram online</span>";
+            notifyOnlineField.appendChild(notifyOnlineInput);
+            const notifyOfflineField = document.createElement("label");
+            notifyOfflineField.className = "admin-edit-field";
+            notifyOfflineField.innerHTML = "<span>Telegram offline</span>";
+            notifyOfflineField.appendChild(notifyOfflineInput);
+            const notifyEventsField = document.createElement("label");
+            notifyEventsField.className = "admin-edit-field";
+            notifyEventsField.innerHTML = "<span>Telegram events</span>";
+            notifyEventsField.appendChild(notifyEventsInput);
+            const notificationGroupsWrap = document.createElement("div");
+            notificationGroupsWrap.className =
+                "admin-edit-field admin-notify-groups admin-edit-field-wide";
+            const notificationGroupsTitle = document.createElement("span");
+            notificationGroupsTitle.textContent = "Telegram события";
+            notificationGroupsWrap.appendChild(notificationGroupsTitle);
+            const notificationToggles = document.createElement("div");
+            notificationToggles.className = "admin-notify-basic-grid";
+            const toggleCards = [
+                [notifyOnlineInput, "Онлайн", "Сообщать о появлении устройства в сети"],
+                [notifyOfflineInput, "Оффлайн", "Сообщать о потере связи с устройством"],
+                [notifyEventsInput, "События", "Присылать события контроллеров и правил"],
+            ];
+            for (const [input, titleText, hintText] of toggleCards) {
+                const line = document.createElement("label");
+                line.className = "admin-notify-basic";
+                const textWrap = document.createElement("span");
+                textWrap.className = "admin-notify-basic-body";
+                textWrap.innerHTML = `
+                    <span class="admin-notify-basic-title">${esc(titleText)}</span>
+                    <span class="admin-notify-basic-text">${esc(hintText)}</span>
+                `;
+                line.appendChild(input);
+                line.appendChild(textWrap);
+                notificationToggles.appendChild(line);
+            }
+            notificationGroupsWrap.appendChild(notificationToggles);
+            const notificationGroupsGrid = document.createElement("div");
+            notificationGroupsGrid.className = "admin-notify-groups-grid";
+            const notificationInputs = [];
+            for (const group of Array.isArray(notificationCatalog)
+                ? notificationCatalog
+                : []) {
+                if (String(group?.key || "") === "device") continue;
+                const items = Array.isArray(group?.items) ? group.items : [];
+                if (!items.length) continue;
+                const box = document.createElement("div");
+                box.className = "admin-notify-group";
+                const head = document.createElement("div");
+                head.className = "admin-notify-group-title";
+                head.textContent = String(group.title || group.key || "События");
+                box.appendChild(head);
+                const checks = document.createElement("div");
+                checks.className = "admin-notify-check-grid";
+                for (const item of items) {
+                    const key = String(item?.key || "").trim();
+                    if (!key) continue;
+                    const line = document.createElement("label");
+                    line.className = "admin-notify-check";
+                    const input = document.createElement("input");
+                    input.type = "checkbox";
+                    input.checked =
+                        useAllNotificationItems || notificationPrefs.has(key);
+                    notificationInputs.push(input);
+                    input.dataset.notificationKey = key;
+                    const text = document.createElement("span");
+                    text.textContent = String(item?.title || key);
+                    line.appendChild(input);
+                    line.appendChild(text);
+                    checks.appendChild(line);
+                }
+                box.appendChild(checks);
+                notificationGroupsGrid.appendChild(box);
+            }
+            notificationGroupsWrap.appendChild(notificationGroupsGrid);
             const passwordField = document.createElement("label");
             passwordField.className = "admin-edit-field";
             passwordField.innerHTML = "<span>Новый пароль</span>";
             passwordField.appendChild(passwordInput);
+            const objectsField = document.createElement("label");
+            objectsField.className = "admin-edit-field admin-edit-field-wide";
+            objectsField.innerHTML = "<span>Доступные объекты</span>";
+            const objectsWrap = document.createElement("div");
+            objectsWrap.className = "admin-check-chip-grid";
+            for (const objectItem of objectNames) {
+                const name = String(
+                    typeof objectItem === "string"
+                        ? objectItem
+                        : objectItem?.name || "",
+                ).trim();
+                if (!name) continue;
+                const line = document.createElement("label");
+                line.className = "admin-check-chip";
+                const input = document.createElement("input");
+                input.type = "checkbox";
+                input.checked = allowedObjectSet.has(name);
+                input.dataset.objectName = name;
+                const text = document.createElement("span");
+                text.textContent = name;
+                line.appendChild(input);
+                line.appendChild(text);
+                objectsWrap.appendChild(line);
+            }
+            if (!objectsWrap.childElementCount) {
+                objectsWrap.textContent = "Нет объектов";
+            }
+            objectsField.appendChild(objectsWrap);
             const save = document.createElement("button");
             save.className = "ghost";
             save.textContent = "Сохранить";
@@ -2113,6 +2583,19 @@ export class Ui {
                     plc_username: plcInput.value,
                     telegram_username: tgInput.value,
                     chat_id: chatIdInput.value,
+                    telegram_notify_online: notifyOnlineInput.checked,
+                    telegram_notify_offline: notifyOfflineInput.checked,
+                    telegram_notify_events: notifyEventsInput.checked,
+                    notification_prefs: notificationInputs
+                        .filter((input) => input.checked)
+                        .map((input) => input.dataset.notificationKey)
+                        .filter(Boolean),
+                    allowed_objects: Array.from(
+                        objectsWrap.querySelectorAll("input[type=\"checkbox\"]"),
+                    )
+                        .filter((input) => input.checked)
+                        .map((input) => input.dataset.objectName)
+                        .filter(Boolean),
                     password: passwordInput.value,
                 }),
             );
@@ -2129,6 +2612,8 @@ export class Ui {
             fields.appendChild(plcField);
             fields.appendChild(tgField);
             fields.appendChild(chatField);
+            fields.appendChild(notificationGroupsWrap);
+            fields.appendChild(objectsField);
             fields.appendChild(passwordField);
             row.appendChild(title);
             row.appendChild(fields);
