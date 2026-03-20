@@ -17,14 +17,22 @@ import { WebSocketClient } from "./ws.js";
 const ui = new Ui({ state });
 const ws = new WebSocketClient({ state, ui });
 const DEVICE_POLL_INTERVAL_MS = 3000;
+const LOCAL_STACK_POLL_INTERVAL_MS = 9000;
 let devicePollTimer = null;
+const socketPendingOps = new Map();
 const lightPendingOps = new Map();
+const SOCKET_POLL_INTERVAL_MS = 700;
+const SOCKET_POLL_MAX_ATTEMPTS = 4;
+const SOCKET_POLL_MIN_SEND_GAP_MS = 550;
 const LIGHT_POLL_INTERVAL_MS = 700;
 const LIGHT_POLL_MAX_ATTEMPTS = 4;
 const LIGHT_POLL_MIN_SEND_GAP_MS = 550;
 const UI_PENDING_MS = 1400;
 let devicesRequestSeq = 0;
+let lastSocketPollSentMs = 0;
 let lastLightPollSentMs = 0;
+let lastLocalStackPollSentMs = 0;
+let commandRefreshTimer = null;
 const TARGET_STORE_KEY = "plc_cloud_target_by_device";
 const tilePendingTimers = new WeakMap();
 const buttonPendingTimers = new WeakMap();
@@ -137,6 +145,22 @@ function eventSignature(eventPayload) {
         data: eventPayload.data || null,
         ts: eventPayload.ts || eventPayload.time || "",
     });
+}
+
+function eventPolicyKey(eventPayload = {}) {
+    const kind = String(eventPayload?.kind || "").trim();
+    const reason = String(eventPayload?.reason || "").trim();
+    if (!kind) return "";
+    return reason ? `${kind}.${reason}` : kind;
+}
+
+function isEventAllowedByPrefs(eventPayload, prefs) {
+    const selected = Array.isArray(prefs)
+        ? prefs.map((item) => String(item || "").trim()).filter(Boolean)
+        : [];
+    if (!selected.length) return true;
+    const key = eventPolicyKey(eventPayload);
+    return key ? selected.includes(key) : false;
 }
 
 function ensureEventToastHost() {
@@ -297,6 +321,14 @@ function maybeShowEventToast(detail) {
     if (!eventPayload || typeof eventPayload !== "object") return;
     const reason = String(eventPayload.reason || "").trim().toLowerCase();
     if (reason === "periodic") return;
+    if (
+        !isEventAllowedByPrefs(
+            eventPayload,
+            state.currentSession?.notification_prefs,
+        )
+    ) {
+        return;
+    }
     const key = currentScopeKey(detail);
     const signature = eventSignature(eventPayload);
     const previous = lastEventSignatureByScope.get(key);
@@ -567,7 +599,7 @@ async function loadAdminUsers() {
         data.notification_catalog || [],
         async (user, patch) => {
             try {
-                await api(
+                const result = await api(
                     `/api/admin/users/${encodeURIComponent(user.username)}`,
                     {
                         method: "PUT",
@@ -606,6 +638,42 @@ async function loadAdminUsers() {
                         }),
                     },
                 );
+                const nextUsername = String(
+                    result?.user?.username || patch?.username || user.username,
+                ).trim();
+                const currentUsername = String(
+                    state.currentSession?.username || "",
+                ).trim();
+                if (
+                    currentUsername &&
+                    (currentUsername === String(user.username || "").trim() ||
+                        currentUsername === nextUsername)
+                ) {
+                    state.currentSession = {
+                        ...(state.currentSession || {}),
+                        ...(result?.user && typeof result.user === "object"
+                            ? {
+                                  username: nextUsername,
+                                  plc_username: String(
+                                      result.user.plc_username || "",
+                                  ).trim(),
+                                  telegram_username: String(
+                                      result.user.telegram_username || "",
+                                  ).trim(),
+                                  allowed_objects: Array.isArray(
+                                      result.user.allowed_objects,
+                                  )
+                                      ? result.user.allowed_objects
+                                      : [],
+                                  notification_prefs: Array.isArray(
+                                      result.user.notification_prefs,
+                                  )
+                                      ? result.user.notification_prefs
+                                      : [],
+                              }
+                            : {}),
+                    };
+                }
                 await loadAdminUsers();
                 ui.setStatus(
                     `Пользователь "${String(patch?.username || "").trim() || user.username}" обновлен`,
@@ -703,6 +771,11 @@ async function checkAuth() {
     state.targetByDevice = loadTargets();
     ui.applyObjectTheme(state.currentObject || "");
     try {
+        const sessionData = await api("/api/session");
+        state.currentSession =
+            sessionData?.session && typeof sessionData.session === "object"
+                ? sessionData.session
+                : null;
         await refreshObjects();
         await loadAdminDevices();
         await loadAdminUsers();
@@ -711,11 +784,16 @@ async function checkAuth() {
                 if (state.currentObject) {
                     requestDevices(state.currentObject);
                 }
+                if (state.currentDevice) {
+                    subscribeDevice(state.currentDevice.device_id);
+                    requestDeviceSnapshot({ loading: false });
+                }
             },
             onMessage: handleWsMessage,
         });
         ui.show("objects");
     } catch (err) {
+        state.currentSession = null;
         ui.show("login");
     }
 }
@@ -745,6 +823,7 @@ ui.logoutBtn.addEventListener("click", async () => {
     }
     ws.close();
     detachCurrentDeviceSession();
+    state.currentSession = null;
     state.currentObject = null;
     state.currentDevice = null;
     state.currentDeviceData = null;
@@ -927,6 +1006,7 @@ function detachCurrentDeviceSession() {
     if (state.currentDevice) {
         unsubscribeDevice(state.currentDevice.device_id);
     }
+    clearAllSocketPending();
     clearAllLightPending();
     state.currentDevice = null;
     state.currentDeviceData = null;
@@ -955,6 +1035,16 @@ function startDevicePolling() {
             state.currentUnit,
             state.currentNodeId,
         );
+        if (state.currentUnit === "stack" && state.currentNodeId) {
+            const now = Date.now();
+            if (
+                !lastLocalStackPollSentMs ||
+                now - lastLocalStackPollSentMs >= LOCAL_STACK_POLL_INTERVAL_MS
+            ) {
+                lastLocalStackPollSentMs = now;
+                sendGet(["stack", "authz"], "local");
+            }
+        }
     }, DEVICE_POLL_INTERVAL_MS);
 }
 
@@ -1050,6 +1140,7 @@ ui.userForm?.addEventListener("submit", async (e) => {
 ui.bindTargetPicker((unit, nodeId) => {
     const changed = setCurrentTarget(unit, nodeId);
     if (changed) {
+        clearAllSocketPending();
         clearAllLightPending();
     }
     renderTargetPicker(state.currentDeviceData);
@@ -1117,10 +1208,31 @@ ui.deviceSocketsGrid?.addEventListener("click", (e) => {
     if (!state.currentDevice) return;
     const socketId = Number(tile.dataset.socketId);
     if (!Number.isFinite(socketId)) return;
-    markTilePending(tile);
-    sendCmd("sockets", "toggle", { id: socketId });
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 400);
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 1400);
+    const pendingKey = socketScopeKey(socketId);
+    if (socketPendingOps.has(pendingKey)) return;
+    const visualEl = tile.querySelector(".socket-visual");
+    const currentOn = visualEl ? visualEl.classList.contains("on") : false;
+    beginSocketPending(socketId, !currentOn);
+    const sent = sendCmd("sockets", "toggle", { id: socketId });
+    if (!sent) {
+        clearSocketPending(pendingKey);
+        syncSocketPendingUi();
+        ui.setStatus("Оффлайн", false);
+        ui.setSocketsNotice("Команда не отправлена: нет соединения");
+        return;
+    }
+    if (state.currentDeviceData) {
+        state.currentDeviceData = patchSocketState(
+            state.currentDeviceData,
+            socketId,
+            !currentOn,
+        );
+        const scopedDetail = resolveScopedDetail(state.currentDeviceData);
+        ui.renderDevice(scopedDetail);
+        ui.renderSockets(scopedDetail);
+    }
+    syncSocketPendingUi();
+    triggerSocketPoll(pendingKey, 0);
 });
 
 ui.deviceLightsGrid?.addEventListener("click", (e) => {
@@ -1153,8 +1265,7 @@ ui.deviceTanksGrid?.addEventListener("click", (e) => {
     const nextState = currentPowerOn ? "off" : "on";
     markTilePending(tile);
     sendCmd("tanks", "power", { id: tankId, state: nextState });
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 500);
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 1500);
+    scheduleCommandRefresh(1500);
 });
 
 ui.deviceSecurityActions?.addEventListener("click", (e) => {
@@ -1164,8 +1275,7 @@ ui.deviceSecurityActions?.addEventListener("click", (e) => {
     if (!action) return;
     markButtonPending(actionEl);
     sendCmd("security", action, {});
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 500);
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 1500);
+    scheduleCommandRefresh(1500);
 });
 
 ui.deviceThermoGrid?.addEventListener("click", (e) => {
@@ -1197,8 +1307,7 @@ ui.deviceThermoGrid?.addEventListener("click", (e) => {
     } else {
         return;
     }
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 500);
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 1500);
+    scheduleCommandRefresh(1500);
 });
 
 ui.deviceSepticGrid?.addEventListener("click", (e) => {
@@ -1212,8 +1321,7 @@ ui.deviceSepticGrid?.addEventListener("click", (e) => {
     const monitor = tile.dataset.monitor === "1";
     markTilePending(tile);
     sendCmd("septic", "monitor", { id, state: monitor ? "off" : "on" });
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 500);
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 1500);
+    scheduleCommandRefresh(1500);
 });
 
 ui.deviceWateringGrid?.addEventListener("click", (e) => {
@@ -1308,8 +1416,7 @@ ui.deviceWateringGrid?.addEventListener("click", (e) => {
     } else {
         return;
     }
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 500);
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 1500);
+    scheduleCommandRefresh(1500);
 });
 
 ui.deviceRingWrap?.addEventListener("pointerdown", (e) => {
@@ -1360,8 +1467,7 @@ ui.deviceAvrWrap?.addEventListener("click", (e) => {
     } else {
         return;
     }
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 500);
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 1500);
+    scheduleCommandRefresh(1500);
 });
 
 ui.deviceLeakActions?.addEventListener("click", (e) => {
@@ -1370,8 +1476,7 @@ ui.deviceLeakActions?.addEventListener("click", (e) => {
     if (actionEl.dataset.action !== "ack_all") return;
     markButtonPending(actionEl);
     sendCmd("leak", "ack_all", {});
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 500);
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 1500);
+    scheduleCommandRefresh(1500);
 });
 
 ui.deviceLeakGrid?.addEventListener("click", (e) => {
@@ -1392,8 +1497,7 @@ ui.deviceLeakGrid?.addEventListener("click", (e) => {
     } else {
         return;
     }
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 500);
-    setTimeout(() => requestDeviceSnapshot({ loading: false }), 1500);
+    scheduleCommandRefresh(1500);
 });
 
 function selectObject(name) {
@@ -1405,6 +1509,7 @@ function selectObject(name) {
 }
 
 function selectDevice(device) {
+    clearAllSocketPending();
     clearAllLightPending();
     const isVirtual = Boolean(device?.virtual);
     if (isVirtual) {
@@ -1508,7 +1613,7 @@ function unsubscribeDevice(deviceId) {
 
 function sendGet(what, unit = "local", nodeId = null) {
     if (!state.currentDevice) return;
-    ws.send({
+    return ws.send({
         type: "send_get",
         device_id: state.currentDevice.device_id,
         what,
@@ -1525,7 +1630,7 @@ function sendCmd(
     nodeId = state.currentNodeId,
 ) {
     if (!state.currentDevice) return;
-    ws.send({
+    return ws.send({
         type: "send_cmd",
         device_id: state.currentDevice.device_id,
         controller,
@@ -1545,6 +1650,67 @@ function lightScopeKey(
     const scopedUnit = unit === "stack" ? "stack" : "local";
     const scopedNodeId = scopedUnit === "stack" ? Number(nodeId || 0) : 0;
     return `${Number(deviceId || 0)}:${scopedUnit}:${scopedNodeId}:${Number(lightId)}`;
+}
+
+function socketScopeKey(
+    socketId,
+    unit = state.currentUnit,
+    nodeId = state.currentNodeId,
+    deviceId = state.currentDevice?.device_id,
+) {
+    const scopedUnit = unit === "stack" ? "stack" : "local";
+    const scopedNodeId = scopedUnit === "stack" ? Number(nodeId || 0) : 0;
+    return `${Number(deviceId || 0)}:${scopedUnit}:${scopedNodeId}:${Number(socketId)}`;
+}
+
+function beginSocketPending(socketId, expectedState) {
+    if (!state.currentDevice) return null;
+    const key = socketScopeKey(socketId);
+    clearSocketPending(key);
+    socketPendingOps.set(key, {
+        key,
+        deviceId: Number(state.currentDevice.device_id),
+        unit: state.currentUnit === "stack" ? "stack" : "local",
+        nodeId:
+            state.currentUnit === "stack"
+                ? Number(state.currentNodeId || 0)
+                : 0,
+        socketId: Number(socketId),
+        expectedState: Boolean(expectedState),
+        attempts: 0,
+        timer: null,
+    });
+    syncSocketPendingUi();
+    return key;
+}
+
+function clearSocketPending(key) {
+    const op = socketPendingOps.get(key);
+    if (!op) return;
+    if (op.timer) {
+        clearTimeout(op.timer);
+    }
+    socketPendingOps.delete(key);
+}
+
+function clearSocketPendingByScope(
+    deviceId = state.currentDevice?.device_id,
+    unit = state.currentUnit,
+    nodeId = state.currentNodeId,
+) {
+    const prefix = `${Number(deviceId || 0)}:${unit === "stack" ? "stack" : "local"}:${unit === "stack" ? Number(nodeId || 0) : 0}:`;
+    for (const key of [...socketPendingOps.keys()]) {
+        if (!key.startsWith(prefix)) continue;
+        clearSocketPending(key);
+    }
+    syncSocketPendingUi();
+}
+
+function clearAllSocketPending() {
+    for (const key of [...socketPendingOps.keys()]) {
+        clearSocketPending(key);
+    }
+    syncSocketPendingUi();
 }
 
 function beginLightPending(lightId, expectedState) {
@@ -1594,6 +1760,133 @@ function clearAllLightPending() {
         clearLightPending(key);
     }
     syncLightPendingUi();
+}
+
+function syncSocketPendingUi() {
+    if (!ui.deviceSocketsGrid) return;
+    if (!state.currentDevice) return;
+    const currentDeviceId = Number(state.currentDevice.device_id);
+    const currentUnit = state.currentUnit === "stack" ? "stack" : "local";
+    const currentNodeId =
+        currentUnit === "stack" ? Number(state.currentNodeId || 0) : 0;
+    const pendingIds = new Set();
+    for (const op of socketPendingOps.values()) {
+        if (Number(op.deviceId) !== currentDeviceId) continue;
+        if (op.unit !== currentUnit) continue;
+        if (Number(op.nodeId || 0) !== currentNodeId) continue;
+        pendingIds.add(Number(op.socketId));
+    }
+    const tiles = ui.deviceSocketsGrid.querySelectorAll("[data-socket-id]");
+    tiles.forEach((tile) => {
+        const id = Number(tile.dataset.socketId);
+        const isPending = pendingIds.has(id);
+        tile.classList.toggle("pending", isPending);
+        tile.setAttribute("aria-busy", isPending ? "true" : "false");
+    });
+}
+
+function scheduleCommandRefresh(delayMs = 1200) {
+    if (commandRefreshTimer) {
+        clearTimeout(commandRefreshTimer);
+        commandRefreshTimer = null;
+    }
+    commandRefreshTimer = setTimeout(() => {
+        commandRefreshTimer = null;
+        requestDeviceSnapshot({ loading: false });
+    }, Math.max(250, Number(delayMs) || 1200));
+}
+
+function triggerSocketPoll(key, delayMs = SOCKET_POLL_INTERVAL_MS) {
+    const op = socketPendingOps.get(key);
+    if (!op) return;
+    if (op.timer) {
+        clearTimeout(op.timer);
+    }
+    op.timer = setTimeout(() => {
+        const active = socketPendingOps.get(key);
+        if (
+            !active ||
+            !state.currentDevice ||
+            Number(state.currentDevice.device_id) !== Number(active.deviceId)
+        ) {
+            clearSocketPending(key);
+            return;
+        }
+        if (active.attempts >= SOCKET_POLL_MAX_ATTEMPTS) {
+            clearSocketPending(key);
+            syncSocketPendingUi();
+            return;
+        }
+        active.attempts += 1;
+        const now = Date.now();
+        if (now - lastSocketPollSentMs >= SOCKET_POLL_MIN_SEND_GAP_MS) {
+            lastSocketPollSentMs = now;
+            requestDeviceSnapshot({ loading: false });
+        }
+        triggerSocketPoll(key, SOCKET_POLL_INTERVAL_MS);
+    }, delayMs);
+}
+
+function patchSocketState(detail, socketId, nextState) {
+    if (!detail || typeof detail !== "object") return detail;
+    const patchList = (list) =>
+        Array.isArray(list)
+            ? list.map((item) =>
+                  Number(item?.id) === Number(socketId)
+                      ? {
+                            ...item,
+                            state: Boolean(nextState),
+                            relay_on: Boolean(nextState),
+                        }
+                      : item,
+              )
+            : list;
+
+    if (state.currentUnit === "stack" && state.currentNodeId) {
+        const key = String(Number(state.currentNodeId));
+        const scoped = detail?.stack_units?.[key];
+        if (!scoped || typeof scoped !== "object") return detail;
+        return {
+            ...detail,
+            stack_units: {
+                ...(detail.stack_units || {}),
+                [key]: {
+                    ...scoped,
+                    controllers: {
+                        ...(scoped.controllers || {}),
+                        sockets: patchList(scoped.controllers?.sockets),
+                    },
+                },
+            },
+        };
+    }
+
+    return {
+        ...detail,
+        controllers: {
+            ...(detail.controllers || {}),
+            sockets: patchList(detail.controllers?.sockets),
+        },
+    };
+}
+
+function resolveSocketState(detail, socketId) {
+    const scoped = resolveScopedDetail(detail);
+    const sockets = Array.isArray(scoped?.controllers?.sockets)
+        ? scoped.controllers.sockets
+        : [];
+    const match = sockets.find((item) => Number(item?.id) === Number(socketId));
+    if (!match) return null;
+    const raw = match.state ?? match.relay_on;
+    if (typeof raw === "boolean") return raw;
+    if (typeof raw === "number") return raw !== 0;
+    if (typeof raw === "string") {
+        const v = raw.trim().toLowerCase();
+        if (v === "1" || v === "on" || v === "true" || v === "yes") return true;
+        if (v === "0" || v === "off" || v === "false" || v === "no" || v === "")
+            return false;
+    }
+    return Boolean(raw);
 }
 
 function triggerLightPoll(key, delayMs = LIGHT_POLL_INTERVAL_MS) {
@@ -1665,6 +1958,7 @@ function requestDeviceSnapshot(options = {}) {
     }
     if (state.currentUnit === "stack" && state.currentNodeId) {
         sendGet(["system", "controllers"], "stack", state.currentNodeId);
+        sendGet(["stack", "authz"], "local");
         return;
     }
     sendGet(["system", "controllers", "stack", "authz"], "local");
@@ -1742,6 +2036,25 @@ function resolveLightState(detail, lightId) {
     return Boolean(raw);
 }
 
+function reconcileSocketPending(detail) {
+    if (!state.currentDevice) return;
+    const currentDeviceId = Number(state.currentDevice.device_id);
+    const keysToClear = [];
+    for (const [key, op] of socketPendingOps.entries()) {
+        if (Number(op.deviceId) !== currentDeviceId) continue;
+        const current = resolveSocketState(detail, op.socketId);
+        if (current === null) continue;
+        if (current === Boolean(op.expectedState)) {
+            keysToClear.push(key);
+        }
+    }
+    if (!keysToClear.length) return;
+    for (const key of keysToClear) {
+        clearSocketPending(key);
+    }
+    syncSocketPendingUi();
+}
+
 function reconcileLightPending(detail) {
     if (!state.currentDevice) return;
     const currentDeviceId = Number(state.currentDevice.device_id);
@@ -1787,6 +2100,8 @@ function handleWsMessage(msg) {
         maybeShowEventToast(scopedDetail);
         ui.renderDevice(scopedDetail);
         ui.renderSockets(scopedDetail);
+        reconcileSocketPending(state.currentDeviceData);
+        syncSocketPendingUi();
         ui.renderLights(scopedDetail);
         reconcileLightPending(state.currentDeviceData);
         syncLightPendingUi();
@@ -1809,6 +2124,7 @@ function handleWsMessage(msg) {
         Number(msg.device_id) === Number(state.currentDevice.device_id)
     ) {
         ui.setContentLoading(false);
+        clearAllSocketPending();
         clearAllLightPending();
         ui.setDeviceNotice("Устройство оффлайн");
         ui.setSocketsNotice("Устройство оффлайн");
@@ -1833,6 +2149,7 @@ function handleWsMessage(msg) {
 
     if (msg.type === "command_error") {
         ui.setContentLoading(false);
+        clearSocketPendingByScope();
         clearLightPendingByScope();
         ui.setStatus(`Ошибка запроса: ${msg.error}`, false);
         ui.setSocketsNotice(`Ошибка команды: ${msg.error}`);

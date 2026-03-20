@@ -20,4 +20,5 @@ export const state = {
     currentUnit: "local",
     currentNodeId: null,
     targetByDevice: {},
+    currentSession: null,
 };

@@ -87,21 +87,28 @@ export class DeviceRegistry {
                 ...(session.state?.stack_units || {}),
             };
             const prev = stackUnits[key] || {};
+            const normalizedPatch = this.normalizeStatePatch_(
+                patch,
+                prev.controllers,
+                scope,
+            );
             const prevSystem =
                 prev.system && typeof prev.system === "object"
                     ? prev.system
                     : null;
             const patchSystem =
-                patch.system && typeof patch.system === "object"
-                    ? patch.system
+                normalizedPatch.system &&
+                typeof normalizedPatch.system === "object"
+                    ? normalizedPatch.system
                     : null;
             const prevControllers =
                 prev.controllers && typeof prev.controllers === "object"
                     ? prev.controllers
                     : null;
             const patchControllers =
-                patch.controllers && typeof patch.controllers === "object"
-                    ? patch.controllers
+                normalizedPatch.controllers &&
+                typeof normalizedPatch.controllers === "object"
+                    ? normalizedPatch.controllers
                     : null;
             const mergedSystem = patchSystem
                 ? {
@@ -144,10 +151,11 @@ export class DeviceRegistry {
                 : prevControllers || null;
             stackUnits[key] = {
                 ...prev,
-                ...patch,
+                ...normalizedPatch,
                 system: mergedSystem,
                 controllers: mergedControllers,
-                last_event: patch.last_event ?? prev.last_event ?? null,
+                last_event:
+                    normalizedPatch.last_event ?? prev.last_event ?? null,
                 updated_ms: Date.now(),
             };
             session.state = {
@@ -156,13 +164,107 @@ export class DeviceRegistry {
             };
             return;
         }
+        const normalizedPatch = this.normalizeStatePatch_(
+            patch,
+            session.state?.controllers,
+            scope,
+        );
         session.state = {
             ...session.state,
-            ...patch,
+            ...normalizedPatch,
             controllers: this.mergeControllers_(
                 session.state?.controllers,
-                patch.controllers,
+                normalizedPatch.controllers,
             ),
+        };
+    }
+
+    normalizeStatePatch_(patch, prevControllers, scope = null) {
+        const next =
+            patch && typeof patch === "object"
+                ? { ...patch }
+                : {};
+        const eventControllers = this.buildControllerPatchFromEvent_(
+            prevControllers,
+            next.last_event,
+            scope,
+        );
+        if (eventControllers) {
+            next.controllers = this.mergeControllers_(
+                next.controllers,
+                eventControllers,
+            );
+        }
+        return next;
+    }
+
+    buildControllerPatchFromEvent_(prevControllers, eventPayload, scope = null) {
+        if (!eventPayload || typeof eventPayload !== "object") return null;
+        const scopeUnit = scope?.unit === "stack" ? "stack" : "local";
+        const scopeNodeId = Number(scope?.node_id);
+        const eventUnit = eventPayload.unit === "stack" ? "stack" : "local";
+        const eventNodeId = Number(eventPayload.node_id);
+        if (scopeUnit === "stack") {
+            if (
+                eventUnit !== "stack" ||
+                !Number.isFinite(scopeNodeId) ||
+                scopeNodeId <= 0 ||
+                Number(eventNodeId) !== scopeNodeId
+            ) {
+                return null;
+            }
+        } else if (eventUnit === "stack") {
+            return null;
+        }
+
+        const data =
+            eventPayload.data && typeof eventPayload.data === "object"
+                ? eventPayload.data
+                : null;
+        if (!data) return null;
+
+        let controllerKey = null;
+        let itemPatch = null;
+        if (eventPayload.kind === "sockets.state") {
+            controllerKey = "sockets";
+            itemPatch = {
+                state: Boolean(data.state),
+                relay_on: Boolean(data.state),
+            };
+        } else if (eventPayload.kind === "lights.state") {
+            controllerKey = "lights";
+            itemPatch = {
+                state: Boolean(data.state),
+                relay_on: Boolean(data.state),
+            };
+        } else if (eventPayload.kind === "thermo.power") {
+            controllerKey = "thermo";
+            itemPatch = {
+                power_on: Boolean(data.power_on),
+            };
+        }
+        if (!controllerKey || !itemPatch) return null;
+
+        const id = Number(data.id);
+        const prevList = Array.isArray(prevControllers?.[controllerKey])
+            ? prevControllers[controllerKey]
+            : null;
+        if (!prevList || !prevList.length || !Number.isFinite(id)) return null;
+
+        let patched = false;
+        const nextList = prevList.map((item) => {
+            if (Number(item?.id) !== id) return item;
+            patched = true;
+            return {
+                ...item,
+                ...(data.name ? { name: data.name } : {}),
+                ...itemPatch,
+            };
+        });
+        if (!patched) return null;
+
+        return {
+            [controllerKey]: nextList,
         };
     }
 

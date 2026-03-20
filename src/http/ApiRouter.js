@@ -74,6 +74,30 @@ export class ApiRouter {
             res.json({ ok: true });
         });
 
+        this.app.get("/api/session", this.requireAuth(), (req, res) => {
+            this.logSessionAction(req, "get_session");
+            res.json({
+                ok: true,
+                session: {
+                    username: String(req.session?.username || "").trim(),
+                    plc_username: String(
+                        req.session?.plc_username || "",
+                    ).trim(),
+                    telegram_username: String(
+                        req.session?.telegram_username || "",
+                    ).trim(),
+                    allowed_objects: Array.isArray(req.session?.allowed_objects)
+                        ? req.session.allowed_objects
+                        : [],
+                    notification_prefs: Array.isArray(
+                        req.session?.notification_prefs,
+                    )
+                        ? req.session.notification_prefs
+                        : [],
+                },
+            });
+        });
+
         this.app.get("/api/objects", this.requireAuth(), async (req, res) => {
             this.logSessionAction(req, "list_objects");
             const objects = await this.devicesDb.listObjects();
@@ -111,7 +135,16 @@ export class ApiRouter {
                 );
                 if (!summary || !canAccessDevice(summary, req.session))
                     continue;
-                visibleDevices.push(device);
+                const sanitized = sanitizeSummaryForSession(
+                    summary,
+                    req.session,
+                );
+                if (!sanitized)
+                    continue;
+                visibleDevices.push({
+                    ...device,
+                    stack: sanitized.stack || device.stack || null,
+                });
             }
             res.json({
                 ok: true,
@@ -119,6 +152,7 @@ export class ApiRouter {
                     device_id: d.device_id,
                     name: d.name,
                     object_name: d.object_name,
+                    stack: d.stack || null,
                 })),
             });
         });
@@ -348,6 +382,7 @@ export class ApiRouter {
                             allowed_objects,
                         },
                     );
+                    this.sessions.updateUser(user, req.params.username);
                     this.logSessionAction(
                         req,
                         "admin_update_user",

@@ -15,9 +15,18 @@ export class WebSocketClient {
         this.ui = ui;
         this.socket = null;
         this.pending = [];
+        this.handlers = {};
+        this.reconnectTimer = null;
+        this.manualClose = false;
     }
 
     connect(handlers = {}) {
+        this.handlers = handlers;
+        this.manualClose = false;
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
         if (this.socket && this.socket.readyState === WebSocket.OPEN) return;
         if (this.socket && this.socket.readyState === WebSocket.CONNECTING)
             return;
@@ -31,17 +40,25 @@ export class WebSocketClient {
             for (const payload of queued) {
                 this.socket.send(payload);
             }
-            if (handlers.onOpen) handlers.onOpen();
+            if (this.handlers.onOpen) this.handlers.onOpen();
         });
 
         this.socket.addEventListener("close", () => {
             this.ui.setStatus("Оффлайн", false);
-            if (handlers.onClose) handlers.onClose();
+            if (this.handlers.onClose) this.handlers.onClose();
+            this.socket = null;
+            this.state.ws = null;
+            if (!this.manualClose && !this.reconnectTimer) {
+                this.reconnectTimer = setTimeout(() => {
+                    this.reconnectTimer = null;
+                    this.connect(this.handlers);
+                }, 1500);
+            }
         });
 
         this.socket.addEventListener("message", (event) => {
             const msg = JSON.parse(event.data);
-            if (handlers.onMessage) handlers.onMessage(msg);
+            if (this.handlers.onMessage) this.handlers.onMessage(msg);
         });
     }
 
@@ -49,14 +66,21 @@ export class WebSocketClient {
         const encoded = JSON.stringify(payload);
         if (this.socket && this.socket.readyState === WebSocket.OPEN) {
             this.socket.send(encoded);
-            return;
+            return true;
         }
         if (this.socket && this.socket.readyState === WebSocket.CONNECTING) {
             this.pending.push(encoded);
+            return true;
         }
+        return false;
     }
 
     close() {
+        this.manualClose = true;
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
         if (this.socket) {
             this.socket.close();
         }
