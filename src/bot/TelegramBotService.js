@@ -42,6 +42,7 @@ const CALLBACK_OBJECTS_BACK = `${CALLBACK_PREFIX}:objects_back`;
 const CALLBACK_CONTROLLER_PREFIX = `${CALLBACK_PREFIX}:controller:`;
 const CALLBACK_TOGGLE_PREFIX = `${CALLBACK_PREFIX}:toggle:`;
 const CALLBACK_QUICK_PREFIX = `${CALLBACK_PREFIX}:quick:`;
+const STACK_SUMMARY_REFRESH_COOLDOWN_MS = 5000;
 
 function normalizePath(value, fallback = "/telegram/webhook") {
     const raw = String(value || fallback).trim() || fallback;
@@ -157,6 +158,7 @@ export class TelegramBotService {
         this.wateringMenu = new TgWateringMenu({ registry, devicesDb });
         this.lastSummaryByDevice = new Map();
         this.lastEventSignatureByDevice = new Map();
+        this.lastStackSummaryRefreshByScope = new Map();
         this.lastChat = {
             chat_id: "",
             telegram_username: "",
@@ -2093,14 +2095,22 @@ export class TelegramBotService {
     }
 
     diagnoseControllers(summary, sanitized, nodeId = null, session = {}) {
+        const scopedSummary = nodeId
+            ? this.resolveScopedDetail(summary, nodeId)
+            : summary;
+        const scopedSanitized = nodeId
+            ? this.resolveScopedDetail(sanitized, nodeId)
+            : sanitized;
         const baseControllers =
-            summary?.controllers && typeof summary.controllers === "object"
-                ? summary.controllers
+            scopedSummary?.controllers &&
+            typeof scopedSummary.controllers === "object"
+                ? scopedSummary.controllers
                 : {};
         const rawKeys = Object.keys(baseControllers);
         const visibleKeys = Object.keys(
-            sanitized?.controllers && typeof sanitized.controllers === "object"
-                ? sanitized.controllers
+            scopedSanitized?.controllers &&
+                typeof scopedSanitized.controllers === "object"
+                ? scopedSanitized.controllers
                 : {},
         );
         const notes = [];
@@ -2138,11 +2148,15 @@ export class TelegramBotService {
             }
         }
         if (!rawKeys.length) {
-            notes.push("в summary.controllers нет ключей");
+            notes.push(
+                nodeId
+                    ? "в summary.stack_units.controllers нет ключей"
+                    : "в summary.controllers нет ключей",
+            );
         } else {
             notes.push(`raw controllers: ${rawKeys.join(", ")}`);
         }
-        if (sanitized && !visibleKeys.length) {
+        if (scopedSanitized && !visibleKeys.length) {
             notes.push("после sanitize не осталось доступных controllers");
         } else if (visibleKeys.length) {
             notes.push(`visible controllers: ${visibleKeys.join(", ")}`);
@@ -2262,15 +2276,38 @@ export class TelegramBotService {
         }
 
         const unit = nodeId ? "stack" : "local";
-        this.deviceWs.sendGet(
-            Number(deviceId),
-            what,
-            unit,
-            nodeId || undefined,
-        );
+        const refreshScopeKey = `${Number(deviceId)}:${unit}:${Number(nodeId || 0)}`;
+        const sendRefresh = () => {
+            this.deviceWs.sendGet(
+                Number(deviceId),
+                what,
+                unit,
+                nodeId || undefined,
+            );
+            if (nodeId) {
+                this.deviceWs.sendGet(
+                    Number(deviceId),
+                    ["stack", "authz"],
+                    "local",
+                );
+            }
+        };
+        const now = Date.now();
+        const lastRefreshAt =
+            this.lastStackSummaryRefreshByScope.get(refreshScopeKey) || 0;
+        if (
+            !nodeId ||
+            !lastRefreshAt ||
+            now - lastRefreshAt >= STACK_SUMMARY_REFRESH_COOLDOWN_MS
+        ) {
+            sendRefresh();
+            if (nodeId) {
+                this.lastStackSummaryRefreshByScope.set(refreshScopeKey, now);
+            }
+        }
 
         const startedAt = Date.now();
-        while (Date.now() - startedAt < 1200) {
+        while (Date.now() - startedAt < 1800) {
             await this.delay(120);
             const current = await this.registry.buildSummary(
                 deviceId,
