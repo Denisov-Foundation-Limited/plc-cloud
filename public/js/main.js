@@ -18,7 +18,11 @@ const ui = new Ui({ state });
 const ws = new WebSocketClient({ state, ui });
 const DEVICE_POLL_INTERVAL_MS = 3000;
 const LOCAL_STACK_POLL_INTERVAL_MS = 9000;
+const STACK_PENDING_RETRY_MS = 800;
+const STACK_PENDING_RETRY_MAX_ATTEMPTS = 8;
 let devicePollTimer = null;
+let stackPendingRetryTimer = null;
+let stackPendingRetryAttempts = 0;
 const socketPendingOps = new Map();
 const lightPendingOps = new Map();
 const SOCKET_POLL_INTERVAL_MS = 700;
@@ -126,6 +130,65 @@ function saveTargets() {
     } catch (err) {
         // ignore storage errors
     }
+}
+
+function clearStackPendingRetry() {
+    if (stackPendingRetryTimer) {
+        clearTimeout(stackPendingRetryTimer);
+        stackPendingRetryTimer = null;
+    }
+    stackPendingRetryAttempts = 0;
+}
+
+function hasOwn(obj, key) {
+    return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function isScopedStackSystemPending(detail) {
+    if (state.currentUnit !== "stack" || !state.currentNodeId) return false;
+    const scoped = resolveScopedDetail(detail);
+    const system = scoped?.system && typeof scoped.system === "object"
+        ? scoped.system
+        : null;
+    if (!system) return true;
+    const rtc =
+        system.rtc && typeof system.rtc === "object" ? system.rtc : null;
+    const plc =
+        system.plc && typeof system.plc === "object" ? system.plc : null;
+    const hasRtc =
+        !!rtc &&
+        (hasOwn(rtc, "date") ||
+            hasOwn(rtc, "time") ||
+            hasOwn(rtc, "temp_c"));
+    const hasPlc =
+        !!plc &&
+        (hasOwn(plc, "board_temp") || hasOwn(plc, "cpu_temp"));
+    return !(hasRtc || hasPlc);
+}
+
+function scheduleStackPendingRetry(detail) {
+    if (state.currentUnit !== "stack" || !state.currentNodeId) {
+        clearStackPendingRetry();
+        return;
+    }
+    if (!isScopedStackSystemPending(detail)) {
+        clearStackPendingRetry();
+        if (ui.deviceNotice?.textContent === "Ожидание данных слейва...") {
+            ui.setDeviceNotice("");
+        }
+        return;
+    }
+    ui.setDeviceNotice("Ожидание данных слейва...");
+    if (stackPendingRetryTimer) return;
+    if (stackPendingRetryAttempts >= STACK_PENDING_RETRY_MAX_ATTEMPTS) return;
+    stackPendingRetryTimer = setTimeout(() => {
+        stackPendingRetryTimer = null;
+        stackPendingRetryAttempts += 1;
+        if (!state.currentDevice || state.currentUnit !== "stack" || !state.currentNodeId)
+            return;
+        sendGet(["system", "controllers"], "stack", state.currentNodeId);
+        scheduleStackPendingRetry(state.currentDeviceData);
+    }, STACK_PENDING_RETRY_MS);
 }
 
 function currentScopeKey(detail = null) {
@@ -790,6 +853,17 @@ async function checkAuth() {
                 }
             },
             onMessage: handleWsMessage,
+            onUnauthorized: () => {
+                clearStackPendingRetry();
+                detachCurrentDeviceSession();
+                state.currentSession = null;
+                state.currentObject = null;
+                state.currentDevice = null;
+                state.currentDeviceData = null;
+                setCurrentTarget("local", null);
+                ui.setStatus("Сессия истекла", false);
+                ui.show("login");
+            },
         });
         ui.show("objects");
     } catch (err) {
@@ -1142,10 +1216,12 @@ ui.bindTargetPicker((unit, nodeId) => {
     if (changed) {
         clearAllSocketPending();
         clearAllLightPending();
+        clearStackPendingRetry();
     }
     renderTargetPicker(state.currentDeviceData);
     if (changed) {
         requestDeviceSnapshot();
+        scheduleStackPendingRetry(state.currentDeviceData);
     }
     ui.show("device");
 });
@@ -1511,6 +1587,7 @@ function selectObject(name) {
 function selectDevice(device) {
     clearAllSocketPending();
     clearAllLightPending();
+    clearStackPendingRetry();
     const isVirtual = Boolean(device?.virtual);
     if (isVirtual) {
         const masterDevice = (state.devicesRaw || []).find(
@@ -1582,6 +1659,7 @@ function selectDevice(device) {
     renderTargetPicker(device);
     subscribeDevice(device.device_id);
     requestDeviceSnapshot();
+    scheduleStackPendingRetry(state.currentDeviceData);
     startDevicePolling();
     ui.show("device");
 }
@@ -1958,7 +2036,6 @@ function requestDeviceSnapshot(options = {}) {
     }
     if (state.currentUnit === "stack" && state.currentNodeId) {
         sendGet(["system", "controllers"], "stack", state.currentNodeId);
-        sendGet(["stack", "authz"], "local");
         return;
     }
     sendGet(["system", "controllers", "stack", "authz"], "local");
@@ -1975,6 +2052,79 @@ function mergeDeviceData(prev, next) {
         stack_units: next.stack_units ?? prev.stack_units,
         last_event: next.last_event ?? prev.last_event,
     };
+}
+
+function mergeScopedGetResult(prev, msg) {
+    if (!msg || typeof msg !== "object") return prev;
+    const unit = msg.unit === "stack" ? "stack" : "local";
+    const data =
+        msg.data && typeof msg.data === "object" ? msg.data : {};
+    const base =
+        prev ||
+        state.currentDeviceData ||
+        state.currentDevice ||
+        {};
+    if (unit !== "stack") {
+        return mergeDeviceData(base, data);
+    }
+    const nodeId = Number(msg.node_id || 0);
+    if (!nodeId) return base;
+    const key = String(nodeId);
+    const nextStackUnits = {
+        ...(base.stack_units && typeof base.stack_units === "object"
+            ? base.stack_units
+            : {}),
+    };
+    const patchUnit =
+        data.stack_units &&
+        typeof data.stack_units === "object" &&
+        data.stack_units[key] &&
+        typeof data.stack_units[key] === "object"
+            ? data.stack_units[key]
+            : {
+                  ...(data.system && typeof data.system === "object"
+                      ? { system: data.system }
+                      : {}),
+                  ...(data.controllers && typeof data.controllers === "object"
+                      ? { controllers: data.controllers }
+                      : {}),
+                  ...(data.last_event ? { last_event: data.last_event } : {}),
+              };
+    const prevUnit =
+        nextStackUnits[key] && typeof nextStackUnits[key] === "object"
+            ? nextStackUnits[key]
+            : {};
+    nextStackUnits[key] = {
+        ...prevUnit,
+        ...patchUnit,
+        system:
+            patchUnit.system && typeof patchUnit.system === "object"
+                ? {
+                      ...((prevUnit.system && typeof prevUnit.system === "object"
+                          ? prevUnit.system
+                          : {})),
+                      ...patchUnit.system,
+                  }
+                : prevUnit.system || {},
+        controllers:
+            patchUnit.controllers && typeof patchUnit.controllers === "object"
+                ? {
+                      ...((prevUnit.controllers &&
+                      typeof prevUnit.controllers === "object"
+                          ? prevUnit.controllers
+                          : {})),
+                      ...patchUnit.controllers,
+                  }
+                : prevUnit.controllers || {},
+    };
+    return mergeDeviceData(base, {
+        ...(data.stack
+            ? { stack: data.stack }
+            : base.stack
+              ? { stack: base.stack }
+              : {}),
+        stack_units: nextStackUnits,
+    });
 }
 
 function resolveScopedDetail(detail) {
@@ -2086,6 +2236,35 @@ function handleWsMessage(msg) {
     }
 
     if (
+        msg.type === "get_result" &&
+        state.currentDevice &&
+        Number(msg.device_id) === Number(state.currentDevice.device_id)
+    ) {
+        ui.setContentLoading(false);
+        state.currentDeviceData = mergeScopedGetResult(
+            state.currentDeviceData,
+            msg,
+        );
+        renderTargetPicker(state.currentDeviceData);
+        const scopedDetail = resolveScopedDetail(state.currentDeviceData);
+        scheduleStackPendingRetry(state.currentDeviceData);
+        ui.renderDevice(scopedDetail);
+        ui.renderSockets(scopedDetail);
+        ui.renderLights(scopedDetail);
+        ui.renderTanks(scopedDetail);
+        ui.renderSecurity(scopedDetail);
+        ui.renderMeteo(scopedDetail);
+        ui.renderThermo(scopedDetail);
+        ui.renderSeptic(scopedDetail);
+        ui.renderWatering(scopedDetail);
+        ui.renderRing(scopedDetail);
+        ui.renderAvr(scopedDetail);
+        ui.renderLeak(scopedDetail);
+        ui.renderNetwork(scopedDetail);
+        return;
+    }
+
+    if (
         msg.type === "device_update" &&
         state.currentDevice &&
         Number(msg.device?.device_id) === Number(state.currentDevice.device_id)
@@ -2097,6 +2276,7 @@ function handleWsMessage(msg) {
         );
         renderTargetPicker(state.currentDeviceData);
         const scopedDetail = resolveScopedDetail(state.currentDeviceData);
+        scheduleStackPendingRetry(state.currentDeviceData);
         maybeShowEventToast(scopedDetail);
         ui.renderDevice(scopedDetail);
         ui.renderSockets(scopedDetail);
@@ -2147,11 +2327,28 @@ function handleWsMessage(msg) {
         requestDevices(state.currentObject);
     }
 
+    if (
+        msg.type === "devices_dirty" &&
+        state.currentObject &&
+        String(msg.object_name || "") === String(state.currentObject || "")
+    ) {
+        requestDevices(state.currentObject);
+        if (
+            state.currentDevice &&
+            Number(msg.device_id) === Number(state.currentDevice.device_id)
+        ) {
+            requestDeviceSnapshot({ loading: false });
+            scheduleStackPendingRetry(state.currentDeviceData);
+        }
+    }
+
     if (msg.type === "command_error") {
         ui.setContentLoading(false);
+        clearStackPendingRetry();
         clearSocketPendingByScope();
         clearLightPendingByScope();
         ui.setStatus(`Ошибка запроса: ${msg.error}`, false);
+        ui.setDeviceNotice(`Ошибка запроса: ${msg.error}`);
         ui.setSocketsNotice(`Ошибка команды: ${msg.error}`);
         ui.setLightsNotice(`Ошибка команды: ${msg.error}`);
         ui.setTanksNotice(`Ошибка команды: ${msg.error}`);

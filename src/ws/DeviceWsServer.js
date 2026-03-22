@@ -32,6 +32,7 @@ export class DeviceWsServer {
         this.onDeviceOffline = onDeviceOffline;
         this.onDeviceUpdate = onDeviceUpdate;
         this.pendingScopes = new Map();
+        this.resultHandler = null;
     }
 
     init() {
@@ -116,7 +117,13 @@ export class DeviceWsServer {
     send(ws, msg) {
         if (ws.readyState === 1) {
             ws.send(JSON.stringify(msg));
+            return true;
         }
+        return false;
+    }
+
+    setResultHandler(handler) {
+        this.resultHandler = typeof handler === "function" ? handler : null;
     }
 
     validateEnvelope(message) {
@@ -261,13 +268,13 @@ export class DeviceWsServer {
 
         if (message.type === "result" || message.type === "ack") {
             const data = message.payload?.data;
+            const replyKey = message.reply_to || null;
+            const pendingScope = replyKey
+                ? this.pendingScopes.get(String(replyKey))
+                : null;
+            const scopeUnit = message.unit || pendingScope?.unit;
+            const scopeNodeId = message.node_id ?? pendingScope?.node_id;
             if (data && typeof data === "object") {
-                const replyKey = message.reply_to || null;
-                const pendingScope = replyKey
-                    ? this.pendingScopes.get(String(replyKey))
-                    : null;
-                const scopeUnit = message.unit || pendingScope?.unit;
-                const scopeNodeId = message.node_id ?? pendingScope?.node_id;
                 try {
                     this.registry.registerState(
                         deviceId,
@@ -282,6 +289,27 @@ export class DeviceWsServer {
                         `registerState failed: type=${message.type} reply_to=${message.reply_to || "-"} unit=${scopeUnit || "-"} node_id=${scopeNodeId ?? "-"} error=${err?.message || "unknown_error"}`,
                     );
                     throw err;
+                }
+            }
+            if (this.resultHandler && replyKey) {
+                try {
+                    this.resultHandler({
+                        reply_to: String(replyKey),
+                        device_id: Number(deviceId),
+                        unit: scopeUnit || "local",
+                        node_id:
+                            scopeUnit === "stack" && scopeNodeId
+                                ? Number(scopeNodeId)
+                                : null,
+                        data:
+                            data && typeof data === "object"
+                                ? { ...data }
+                                : null,
+                    });
+                } catch (err) {
+                    logger.error(
+                        `resultHandler failed: reply_to=${replyKey} device=${deviceId} error=${err?.message || "unknown_error"}`,
+                    );
                 }
             }
             if (message.reply_to) {
@@ -303,14 +331,46 @@ export class DeviceWsServer {
                           ...(scopeNodeId ? { node_id: scopeNodeId } : {}),
                       }
                     : null;
-            const patch = { last_event: eventPayload };
             const eventData = eventPayload?.data;
+            const patch = { last_event: eventPayload };
             if (
                 (!scopeUnit || scopeUnit === "local") &&
                 eventData &&
                 typeof eventData === "object"
             ) {
                 Object.assign(patch, eventData);
+            } else if (
+                scopeUnit === "stack" &&
+                scopeNodeId &&
+                eventData &&
+                typeof eventData === "object"
+            ) {
+                if (eventData.system && typeof eventData.system === "object") {
+                    patch.system = eventData.system;
+                }
+                if (
+                    eventData.controllers &&
+                    typeof eventData.controllers === "object"
+                ) {
+                    patch.controllers = eventData.controllers;
+                }
+                if (
+                    Object.prototype.hasOwnProperty.call(
+                        eventData,
+                        "device_name",
+                    )
+                ) {
+                    patch.name = eventData.device_name;
+                } else if (
+                    Object.prototype.hasOwnProperty.call(eventData, "name")
+                ) {
+                    patch.name = eventData.name;
+                }
+                if (
+                    Object.prototype.hasOwnProperty.call(eventData, "online")
+                ) {
+                    patch.online = Boolean(eventData.online);
+                }
             }
             try {
                 if (scopeUnit && scopeUnit === "stack" && scopeNodeId) {
@@ -390,12 +450,14 @@ export class DeviceWsServer {
         if (unit === "stack" && nodeId) {
             msg.node_id = Number(nodeId);
         }
+        if (!this.send(session.ws, msg)) {
+            return { ok: false, error: "device_socket_not_ready" };
+        }
         this.pendingScopes.set(String(id), {
             deviceId: Number(deviceId),
             unit,
             node_id: unit === "stack" && nodeId ? Number(nodeId) : null,
         });
-        this.send(session.ws, msg);
         return { ok: true, id };
     }
 
@@ -427,12 +489,14 @@ export class DeviceWsServer {
         if (unit === "stack" && nodeId) {
             msg.node_id = Number(nodeId);
         }
+        if (!this.send(session.ws, msg)) {
+            return { ok: false, error: "device_socket_not_ready" };
+        }
         this.pendingScopes.set(String(id), {
             deviceId: Number(deviceId),
             unit,
             node_id: unit === "stack" && nodeId ? Number(nodeId) : null,
         });
-        this.send(session.ws, msg);
         return { ok: true, id };
     }
 }

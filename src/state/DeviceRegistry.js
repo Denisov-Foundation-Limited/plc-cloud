@@ -91,6 +91,7 @@ export class DeviceRegistry {
                 patch,
                 prev.controllers,
                 scope,
+                null,
             );
             const prevSystem =
                 prev.system && typeof prev.system === "object"
@@ -168,6 +169,7 @@ export class DeviceRegistry {
             patch,
             session.state?.controllers,
             scope,
+            session.state?.stack || session.hello?.stack || null,
         );
         session.state = {
             ...session.state,
@@ -179,7 +181,7 @@ export class DeviceRegistry {
         };
     }
 
-    normalizeStatePatch_(patch, prevControllers, scope = null) {
+    normalizeStatePatch_(patch, prevControllers, scope = null, prevStack = null) {
         const next =
             patch && typeof patch === "object"
                 ? { ...patch }
@@ -195,7 +197,81 @@ export class DeviceRegistry {
                 eventControllers,
             );
         }
+        const eventStack = this.buildStackPatchFromEvent_(
+            prevStack,
+            next.last_event,
+            scope,
+        );
+        if (eventStack) {
+            next.stack =
+                next.stack && typeof next.stack === "object"
+                    ? { ...eventStack, ...next.stack }
+                    : eventStack;
+        }
         return next;
+    }
+
+    buildStackPatchFromEvent_(prevStack, eventPayload, scope = null) {
+        if (!eventPayload || typeof eventPayload !== "object") return null;
+        if (String(eventPayload.kind || "") !== "stack.node") return null;
+
+        const scopeUnit = scope?.unit === "stack" ? "stack" : "local";
+        if (scopeUnit !== "local") return null;
+
+        const nodeId = Number(eventPayload.node_id);
+        if (!Number.isFinite(nodeId) || nodeId <= 0) return null;
+
+        const data =
+            eventPayload.data && typeof eventPayload.data === "object"
+                ? eventPayload.data
+                : {};
+        const online =
+            typeof data.online === "boolean"
+                ? Boolean(data.online)
+                : String(eventPayload.reason || "") === "online";
+        const base =
+            prevStack && typeof prevStack === "object" ? prevStack : {};
+        const nodes = Array.isArray(base.nodes) ? [...base.nodes] : [];
+        const nextNodes = [];
+        let replaced = false;
+
+        for (const raw of nodes) {
+            const currentId = Number(raw?.node_id);
+            if (currentId !== nodeId) {
+                nextNodes.push(raw);
+                continue;
+            }
+            replaced = true;
+            if (!online) continue;
+            nextNodes.push({
+                ...raw,
+                node_id: nodeId,
+                name: String(data.unit_name || raw?.name || "").trim(),
+                ip: String(data.ip || raw?.ip || "").trim(),
+                fw: Number.isFinite(Number(data.fw))
+                    ? Number(data.fw)
+                    : Number(raw?.fw || 0),
+                online: true,
+            });
+        }
+
+        if (online && !replaced) {
+            nextNodes.push({
+                node_id: nodeId,
+                name: String(data.unit_name || "").trim(),
+                ip: String(data.ip || "").trim(),
+                fw: Number.isFinite(Number(data.fw)) ? Number(data.fw) : 0,
+                online: true,
+            });
+        }
+
+        nextNodes.sort(
+            (a, b) => Number(a?.node_id || 0) - Number(b?.node_id || 0),
+        );
+        return {
+            ...base,
+            nodes: nextNodes,
+        };
     }
 
     buildControllerPatchFromEvent_(prevControllers, eventPayload, scope = null) {
@@ -341,7 +417,7 @@ export class DeviceRegistry {
             hello: session.hello || null,
             system: session.state?.system || null,
             controllers: session.state?.controllers || null,
-            stack: session.state?.stack || null,
+            stack: session.state?.stack || session.hello?.stack || null,
             stack_units: session.state?.stack_units || null,
             authz:
                 session.state?.authz ||

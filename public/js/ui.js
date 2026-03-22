@@ -415,7 +415,6 @@ export class Ui {
             "settingsTelegramTile",
         );
         this.topMenu = document.getElementById("topMenu");
-        this.menuStatusBtn = document.getElementById("menuStatus");
         this.menuControllersBtn = document.getElementById("menuControllers");
         this.menuNetworkBtn = document.getElementById("menuNetwork");
         this.statusEl = document.getElementById("status");
@@ -906,7 +905,6 @@ export class Ui {
             view === "deviceLeak" ||
             view === "deviceNetwork";
         this.topMenu.classList.toggle("hidden", !inDevicePages);
-        this.menuStatusBtn.classList.toggle("active", view === "device");
         this.menuControllersBtn.classList.toggle(
             "active",
             view === "deviceControllers" ||
@@ -1073,8 +1071,6 @@ export class Ui {
         const fan = system.fan || {};
         const rtcTemp = formatTemperature(rtc.temp_c);
         const boardTemp = formatTemperature(plc.board_temp, 1);
-        const cpuTemp = formatTemperature(plc.cpu_temp);
-        const lastEvent = formatLastEvent(detail.last_event);
 
         this.deviceStatusBody.innerHTML = `
       <tr><td>Имя устройства</td><td><strong>${esc(detail.name || "-")}</strong></td></tr>
@@ -1082,10 +1078,7 @@ export class Ui {
       <tr><td>Время</td><td><strong>${esc(rtc.time || "-")}</strong></td></tr>
       <tr><td>RTC температура</td><td><strong>${rtcTemp}</strong></td></tr>
       <tr><td>Температура платы</td><td><strong>${boardTemp}</strong></td></tr>
-      <tr><td>CPU</td><td><strong>${cpuTemp}</strong></td></tr>
-      <tr><td>Последнее событие</td><td><strong>${lastEvent}</strong></td></tr>
       <tr><td>Вентилятор</td><td>${onOffDot(Boolean(fan.fan_on))}</td></tr>
-      <tr><td>Статус</td><td>${onOffDot(Boolean(detail.online))}</td></tr>
     `;
 
         const cards = summarizeControllers(detail.controllers);
@@ -2427,10 +2420,8 @@ export class Ui {
             chatIdInput.value = user.chat_id || "";
             const notifyOnlineInput = document.createElement("input");
             notifyOnlineInput.type = "checkbox";
-            notifyOnlineInput.checked = Boolean(user.telegram_notify_online);
             const notifyOfflineInput = document.createElement("input");
             notifyOfflineInput.type = "checkbox";
-            notifyOfflineInput.checked = Boolean(user.telegram_notify_offline);
             const notifyEventsInput = document.createElement("input");
             notifyEventsInput.type = "checkbox";
             notifyEventsInput.checked = Boolean(user.telegram_notify_events);
@@ -2438,6 +2429,14 @@ export class Ui {
                 ? user.notification_prefs.map((item) => String(item))
                 : [];
             const notificationPrefs = new Set(rawNotificationPrefs);
+            const stackNodeOnlineKey = "stack.node.online";
+            const stackNodeOfflineKey = "stack.node.offline";
+            notifyOnlineInput.checked =
+                Boolean(user.telegram_notify_online) ||
+                notificationPrefs.has(stackNodeOnlineKey);
+            notifyOfflineInput.checked =
+                Boolean(user.telegram_notify_offline) ||
+                notificationPrefs.has(stackNodeOfflineKey);
             const useAllNotificationItems = rawNotificationPrefs.length === 0;
             const objectNames = Array.isArray(objects) ? objects : [];
             const allowedObjectSet = new Set(
@@ -2524,6 +2523,12 @@ export class Ui {
                 for (const item of items) {
                     const key = String(item?.key || "").trim();
                     if (!key) continue;
+                    if (
+                        key === stackNodeOnlineKey ||
+                        key === stackNodeOfflineKey
+                    ) {
+                        continue;
+                    }
                     const line = document.createElement("label");
                     line.className = "admin-notify-check";
                     const input = document.createElement("input");
@@ -2578,26 +2583,38 @@ export class Ui {
             save.className = "ghost";
             save.textContent = "Сохранить";
             save.addEventListener("click", () =>
-                onSave(user, {
-                    username: usernameInput.value,
-                    plc_username: plcInput.value,
-                    telegram_username: tgInput.value,
-                    chat_id: chatIdInput.value,
-                    telegram_notify_online: notifyOnlineInput.checked,
-                    telegram_notify_offline: notifyOfflineInput.checked,
-                    telegram_notify_events: notifyEventsInput.checked,
-                    notification_prefs: notificationInputs
+                {
+                    const notificationPrefs = notificationInputs
                         .filter((input) => input.checked)
                         .map((input) => input.dataset.notificationKey)
-                        .filter(Boolean),
-                    allowed_objects: Array.from(
-                        objectsWrap.querySelectorAll("input[type=\"checkbox\"]"),
-                    )
-                        .filter((input) => input.checked)
-                        .map((input) => input.dataset.objectName)
-                        .filter(Boolean),
-                    password: passwordInput.value,
-                }),
+                        .filter(Boolean);
+                    if (notifyOnlineInput.checked) {
+                        notificationPrefs.push(stackNodeOnlineKey);
+                    }
+                    if (notifyOfflineInput.checked) {
+                        notificationPrefs.push(stackNodeOfflineKey);
+                    }
+                    const uniqueNotificationPrefs = Array.from(
+                        new Set(notificationPrefs),
+                    );
+                    onSave(user, {
+                        username: usernameInput.value,
+                        plc_username: plcInput.value,
+                        telegram_username: tgInput.value,
+                        chat_id: chatIdInput.value,
+                        telegram_notify_online: notifyOnlineInput.checked,
+                        telegram_notify_offline: notifyOfflineInput.checked,
+                        telegram_notify_events: notifyEventsInput.checked,
+                        notification_prefs: uniqueNotificationPrefs,
+                        allowed_objects: Array.from(
+                            objectsWrap.querySelectorAll("input[type=\"checkbox\"]"),
+                        )
+                            .filter((input) => input.checked)
+                            .map((input) => input.dataset.objectName)
+                            .filter(Boolean),
+                        password: passwordInput.value,
+                    });
+                },
             );
             const del = document.createElement("button");
             del.className = "ghost danger";

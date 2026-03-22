@@ -18,11 +18,13 @@ export class WebSocketClient {
         this.handlers = {};
         this.reconnectTimer = null;
         this.manualClose = false;
+        this.authFailed = false;
     }
 
     connect(handlers = {}) {
         this.handlers = handlers;
         this.manualClose = false;
+        this.authFailed = false;
         if (this.reconnectTimer) {
             clearTimeout(this.reconnectTimer);
             this.reconnectTimer = null;
@@ -43,12 +45,20 @@ export class WebSocketClient {
             if (this.handlers.onOpen) this.handlers.onOpen();
         });
 
-        this.socket.addEventListener("close", () => {
+        this.socket.addEventListener("close", (event) => {
             this.ui.setStatus("Оффлайн", false);
-            if (this.handlers.onClose) this.handlers.onClose();
+            const authFailed = Number(event?.code || 0) === 4401;
+            if (authFailed) {
+                this.authFailed = true;
+                this.manualClose = true;
+                this.pending = [];
+                if (this.handlers.onUnauthorized)
+                    this.handlers.onUnauthorized(event);
+            }
+            if (this.handlers.onClose) this.handlers.onClose(event);
             this.socket = null;
             this.state.ws = null;
-            if (!this.manualClose && !this.reconnectTimer) {
+            if (!this.manualClose && !this.authFailed && !this.reconnectTimer) {
                 this.reconnectTimer = setTimeout(() => {
                     this.reconnectTimer = null;
                     this.connect(this.handlers);

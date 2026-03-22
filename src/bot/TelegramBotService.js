@@ -9,7 +9,7 @@
 /* Email: DenisovFoundationLtd@gmail.com                              */
 /*                                                                    */
 /**********************************************************************/
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot, InlineKeyboard, Keyboard } from "grammy";
 import { rootLogger } from "../utils/Logger.js";
 import {
     filterObjectsForSummaries,
@@ -39,6 +39,7 @@ const CALLBACK_STATUS_HELP = `${CALLBACK_PREFIX}:status_help`;
 const CALLBACK_OBJECT_PREFIX = `${CALLBACK_PREFIX}:object:`;
 const CALLBACK_DEVICE_PREFIX = `${CALLBACK_PREFIX}:device:`;
 const CALLBACK_OBJECTS_BACK = `${CALLBACK_PREFIX}:objects_back`;
+const CALLBACK_DEVICES_BACK_PREFIX = `${CALLBACK_PREFIX}:devices_back:`;
 const CALLBACK_CONTROLLER_PREFIX = `${CALLBACK_PREFIX}:controller:`;
 const CALLBACK_TOGGLE_PREFIX = `${CALLBACK_PREFIX}:toggle:`;
 const CALLBACK_QUICK_PREFIX = `${CALLBACK_PREFIX}:quick:`;
@@ -133,6 +134,27 @@ function eventItemLabel(data, fallback) {
     return fallback || "элемент";
 }
 
+function formatHexId(value) {
+    const num = Number(value || 0) >>> 0;
+    return `0x${num.toString(16).toUpperCase().padStart(8, "0")}`;
+}
+
+function normalizeMenuSelection(value) {
+    return String(value || "")
+        .replace(/^[^\p{L}\p{N}]+/u, "")
+        .replace(/[()]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+}
+
+function menuSelectionIncludes(left, right) {
+    const a = normalizeMenuSelection(left);
+    const b = normalizeMenuSelection(right);
+    if (!a || !b) return false;
+    return a.includes(b) || b.includes(a);
+}
+
 export class TelegramBotService {
     constructor({ telegramConfigDb, usersDb, devicesDb, registry }) {
         this.telegramConfigDb = telegramConfigDb;
@@ -159,6 +181,9 @@ export class TelegramBotService {
         this.lastSummaryByDevice = new Map();
         this.lastEventSignatureByDevice = new Map();
         this.lastStackSummaryRefreshByScope = new Map();
+        this.replyMenuStateByChat = new Map();
+        this.replyActionMapByChat = new Map();
+        this.lastDeviceScopeByChat = new Map();
         this.lastChat = {
             chat_id: "",
             telegram_username: "",
@@ -225,8 +250,8 @@ export class TelegramBotService {
         this.lastSummaryByDevice.set(Number(deviceId), effectiveSummary);
         await this.broadcastNotification("online", effectiveSummary, (sanitized) =>
             [
-                `🟢 Устройство <b>${escapeHtml(sanitized.name || `#${sanitized.device_id}`)}</b> онлайн`,
-                `Объект: <b>${escapeHtml(sanitized.object_name || "-")}</b>`,
+                `📟 Устройство <b>${escapeHtml(sanitized.name || `#${sanitized.device_id}`)}</b> онлайн 🟢`,
+                `🏠 Объект: <b>${escapeHtml(sanitized.object_name || "-")}</b>`,
             ].join("\n"),
         );
     }
@@ -254,8 +279,8 @@ export class TelegramBotService {
         if (!summary) return;
         await this.broadcastNotification("offline", summary, (sanitized) =>
             [
-                `⚪ Устройство <b>${escapeHtml(sanitized.name || `#${sanitized.device_id}`)}</b> оффлайн`,
-                `Объект: <b>${escapeHtml(sanitized.object_name || "-")}</b>`,
+                `📟 Устройство <b>${escapeHtml(sanitized.name || `#${sanitized.device_id}`)}</b> оффлайн 🔴`,
+                `🏠 Объект: <b>${escapeHtml(sanitized.object_name || "-")}</b>`,
             ].join("\n"),
         );
     }
@@ -352,12 +377,10 @@ export class TelegramBotService {
             eventPayload.data && typeof eventPayload.data === "object"
                 ? eventPayload.data
                 : {};
-        const source = eventSourceLabel(summary, eventPayload, data);
         const header = [
-            `Устройство: <b>${deviceTitle(summary)}</b>`,
-            `Объект: <b>${objectTitle(summary)}</b>`,
+            `📟 Устройство: <b>${deviceTitle(summary)}</b>`,
+            `🏠 Объект: <b>${objectTitle(summary)}</b>`,
         ];
-        if (source) header.push(`Источник: <b>${escapeHtml(source)}</b>`);
 
         let title = "";
 
@@ -458,7 +481,7 @@ export class TelegramBotService {
                 : "📜 Сработало правило";
         } else if (kind === "stack.node") {
             const unitName = String(data.unit_name || "").trim();
-            title = `${data.online ? "🟢" : "⚪"} Узел <b>${escapeHtml(unitName || scope || "stack")}</b> ${data.online ? "онлайн" : "оффлайн"}`;
+            title = `🧩 Узел <b>${escapeHtml(unitName || "stack")}</b> ${data.online ? "онлайн 🟢" : "оффлайн 🔴"}`;
         }
 
         if (title) {
@@ -466,11 +489,11 @@ export class TelegramBotService {
             const extras = [];
             if (kind === "avr.source") {
                 if (data.main_ok !== undefined)
-                    extras.push(`Основной ввод: <b>${escapeHtml(boolLabel(data.main_ok, "OK", "нет"))}</b>`);
+                    extras.push(`🔌 Основной ввод: <b>${escapeHtml(boolLabel(data.main_ok, "OK", "нет"))}</b>`);
                 if (data.reserve_ok !== undefined)
-                    extras.push(`Резервный ввод: <b>${escapeHtml(boolLabel(data.reserve_ok, "OK", "нет"))}</b>`);
+                    extras.push(`🔋 Резервный ввод: <b>${escapeHtml(boolLabel(data.reserve_ok, "OK", "нет"))}</b>`);
             } else if (kind === "security.detect" && data.silent !== undefined) {
-                extras.push(`Тихий режим: <b>${escapeHtml(boolLabel(data.silent, "да", "нет"))}</b>`);
+                extras.push(`🕵️ Тихий режим: <b>${escapeHtml(boolLabel(data.silent, "да", "нет"))}</b>`);
             }
             if (extras.length) {
                 lines.push("");
@@ -480,16 +503,15 @@ export class TelegramBotService {
         }
 
         const lines = [
-            `Событие на <b>${deviceTitle(summary)}</b>`,
-            `Объект: <b>${objectTitle(summary)}</b>`,
-            `Тип: <b>${escapeHtml(kind)}</b>`,
+            `🔔 Событие на <b>${deviceTitle(summary)}</b>`,
+            `🏠 Объект: <b>${objectTitle(summary)}</b>`,
+            `🏷️ Тип: <b>${escapeHtml(kind)}</b>`,
         ];
-        if (reason) lines.push(`Причина: <b>${escapeHtml(reason)}</b>`);
-        if (scope) lines.push(`Узел: <b>${escapeHtml(scope)}</b>`);
+        if (reason) lines.push(`📌 Причина: <b>${escapeHtml(reason)}</b>`);
         const details = [];
         for (const [key, value] of Object.entries(data).slice(0, 6)) {
             if (value && typeof value === "object") continue;
-            details.push(`${escapeHtml(key)}: <b>${escapeHtml(value)}</b>`);
+            details.push(`▫️ ${escapeHtml(key)}: <b>${escapeHtml(value)}</b>`);
         }
         if (details.length) {
             lines.push("");
@@ -653,6 +675,13 @@ export class TelegramBotService {
                 `text=${this.truncateForLog(text)}`,
             );
 
+            if (await this.handleReplyKeyboardSelection(ctx, text, user)) {
+                return;
+            }
+            if (await this.handleGlobalTextSelection(ctx, text, user)) {
+                return;
+            }
+
             const normalized = text.toLowerCase();
             if (normalized === "объекты" || normalized === "objects") {
                 await this.sendObjectsList(ctx, "", user);
@@ -678,12 +707,17 @@ export class TelegramBotService {
             await this.replyMenu(
                 ctx,
                 [
-                    "Сообщение получено.",
+                    "<b>Future City PLC</b>",
                     "",
-                    "Используй меню ниже или команды:",
-                    "<code>/start</code>, <code>/help</code>, <code>/objects</code>, <code>/devices</code>, <code>/status &lt;device_id&gt;</code>",
+                    "Это Telegram-бот PLC Cloud для просмотра объектов, устройств и управления контроллерами.",
+                    "",
+                    "Здесь можно открыть нужный объект, перейти к устройствам и дальше управлять розетками, светом, термостатами, баками, септиком и другими модулями.",
+                    "",
+                    "Выбери объект ниже.",
                 ].join("\n"),
-                this.buildObjectsKeyboard(await this.listTelegramObjects(user)),
+                this.buildObjectsReplyKeyboard(
+                    await this.listTelegramObjects(user),
+                ),
             );
         });
 
@@ -770,6 +804,29 @@ export class TelegramBotService {
             this.logTelegramAction(ctx, user, "callback_objects_back");
             await this.sendObjectsList(ctx, "", user);
         });
+
+        this.bot.callbackQuery(
+            new RegExp(`^${CALLBACK_DEVICES_BACK_PREFIX}(.+)$`),
+            async (ctx) => {
+                await ctx.answerCallbackQuery();
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const objectName = decodeURIComponent(
+                    String(Array.isArray(ctx.match) ? ctx.match[1] : ""),
+                ).trim();
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "callback_devices_back",
+                    `object: ${objectName || "-"}`,
+                );
+                if (!objectName) {
+                    await this.sendObjectsList(ctx, "", user);
+                    return;
+                }
+                await this.sendDevicesList(ctx, objectName, user);
+            },
+        );
 
         this.bot.callbackQuery(
             new RegExp(`^${CALLBACK_DEVICE_PREFIX}(\\d+):(\\d+)$`),
@@ -1619,27 +1676,34 @@ export class TelegramBotService {
     async sendObjectsList(ctx, leadText = "", user = null) {
         const objects = await this.listTelegramObjects(user || {});
         if (!objects.length) {
+            this.setReplyMenuState(ctx, null);
             await this.replyMenu(ctx, "Объекты не найдены.");
             return;
         }
-        const lines = objects.map((item, index) => {
+        this.setReplyMenuState(ctx, {
+            kind: "objects",
+            items: objects.map((item) => ({
+                label: `${objectIcon(item)} ${objectLabel(item)}`,
+                object_name: objectLabel(item),
+                match_key: normalizeMenuSelection(objectLabel(item)),
+            })),
+        });
+        const lines = objects.map((item) => {
             const label = objectLabel(item);
-            return `${index + 1}. ${objectIcon(item)} ${label}`;
+            return `${objectIcon(item)} ${label}`;
         });
         const intro = leadText ? `${escapeHtml(leadText)}\n\n` : "";
         await this.replyMenu(
             ctx,
             [
                 intro.trimEnd(),
-                this.panelTitle(
-                    "🏘 Объекты",
-                    `${objects.length} ${this.pluralize(objects.length, ["объект", "объекта", "объектов"])}`,
-                ),
+                this.panelTitle("🏘 Объекты"),
                 lines.map(escapeHtml).join("\n"),
+                `━━━━━━━━━━━━━━━━━\nВсего: ${objects.length}`,
             ]
                 .filter(Boolean)
                 .join("\n\n"),
-            this.buildObjectsKeyboard(objects),
+            this.buildObjectsReplyKeyboard(objects),
         );
     }
 
@@ -1647,25 +1711,40 @@ export class TelegramBotService {
         const args = String(objectName || "").trim();
         const devices = await this.listTelegramDevices(args, user || {});
         if (!devices.length) {
+            this.setReplyMenuState(ctx, null);
             const text = args
                 ? `Для объекта "${escapeHtml(args)}" устройства не найдены.`
                 : "Устройства не найдены.";
-            await this.replyMenu(ctx, text, this.buildMainMenuKeyboard());
+            await this.replyMenu(
+                ctx,
+                text,
+                this.buildReplyKeyboard([["⬅️ Назад"]]),
+            );
             return;
         }
+        this.setReplyMenuState(ctx, {
+            kind: "devices",
+            object_name: args,
+            device_id: devices.length === 1 ? Number(devices[0].device_id) : NaN,
+            node_id: devices.length === 1 ? Number(devices[0].node_id || 0) : 0,
+            items: devices.map((item) => ({
+                label: item.button_label,
+                device_id: Number(item.device_id),
+                node_id: Number(item.node_id || 0),
+                match_key: normalizeMenuSelection(item.button_label),
+            })),
+        });
         const lines = devices.map((item) => {
-            return `${onlineIcon(item.online)} ${item.label}`;
+            return item.label;
         });
         await this.replyMenu(
             ctx,
             [
-                this.panelTitle(
-                    args ? `📟 ${safeText(args)}` : "📟 Устройства",
-                    `${devices.length} ${this.pluralize(devices.length, ["устройство", "устройства", "устройств"])}`,
-                ),
+                this.panelTitle(args ? `📟 ${safeText(args)}` : "📟 Устройства"),
                 lines.map(escapeHtml).join("\n"),
+                `━━━━━━━━━━━━━━━━━\nВсего: ${devices.length}`,
             ].join("\n\n"),
-            this.buildDevicesKeyboard(devices, args),
+            this.buildDevicesReplyKeyboard(devices),
         );
     }
 
@@ -1743,15 +1822,154 @@ export class TelegramBotService {
     }
 
     async replyMenu(ctx, text, keyboard = null, extraOptions = {}) {
+        const replyActionMap = this.extractReplyActionMap(keyboard);
+        if (replyActionMap) {
+            keyboard = this.buildReplyKeyboardFromActionMap(replyActionMap);
+            this.setReplyActionMap(ctx, replyActionMap);
+        } else {
+            this.setReplyActionMap(ctx, null);
+        }
         const options = { parse_mode: "HTML", ...extraOptions };
         if (keyboard) options.reply_markup = keyboard;
+        const callbackMessage = ctx?.callbackQuery?.message || null;
+        const canEdit =
+            Boolean(callbackMessage?.chat?.id) &&
+            Number.isFinite(Number(callbackMessage?.message_id));
+        if (canEdit && !replyActionMap) {
+            try {
+                await ctx.api.editMessageText(
+                    callbackMessage.chat.id,
+                    callbackMessage.message_id,
+                    text,
+                    options,
+                );
+                return;
+            } catch (err) {
+                const message = String(err?.message || "").toLowerCase();
+                const harmless =
+                    message.includes("message is not modified") ||
+                    message.includes("there is no text in the message to edit");
+                if (!harmless) {
+                    logger.warn(
+                        `telegram edit menu failed: ${err?.message || "unknown_error"}`,
+                    );
+                }
+            }
+        }
         await ctx.reply(text, options);
+    }
+
+    getChatId(ctx) {
+        const directId = ctx?.chat?.id;
+        if (Number.isFinite(Number(directId))) {
+            return String(directId);
+        }
+        const callbackId = ctx?.callbackQuery?.message?.chat?.id;
+        if (Number.isFinite(Number(callbackId))) {
+            return String(callbackId);
+        }
+        return "";
+    }
+
+    setReplyMenuState(ctx, state = null) {
+        const chatId = this.getChatId(ctx);
+        if (!chatId) return;
+        if (!state) {
+            this.replyMenuStateByChat.delete(chatId);
+            return;
+        }
+        this.replyMenuStateByChat.set(chatId, state);
+        if (
+            Number.isFinite(Number(state.device_id)) &&
+            (state.kind === "controllers" || state.kind === "devices")
+        ) {
+            this.lastDeviceScopeByChat.set(chatId, {
+                device_id: Number(state.device_id),
+                node_id: Number(state.node_id || 0),
+                object_name: String(state.object_name || "").trim(),
+            });
+        }
+    }
+
+    getReplyMenuState(ctx) {
+        const chatId = this.getChatId(ctx);
+        if (!chatId) return null;
+        return this.replyMenuStateByChat.get(chatId) || null;
+    }
+
+    setReplyActionMap(ctx, actionMap = null) {
+        const chatId = this.getChatId(ctx);
+        if (!chatId) return;
+        if (!actionMap || !actionMap.length) {
+            this.replyActionMapByChat.delete(chatId);
+            return;
+        }
+        this.replyActionMapByChat.set(chatId, actionMap);
+    }
+
+    getReplyActionMap(ctx) {
+        const chatId = this.getChatId(ctx);
+        if (!chatId) return [];
+        return this.replyActionMapByChat.get(chatId) || [];
+    }
+
+    getLastDeviceScope(ctx) {
+        const chatId = this.getChatId(ctx);
+        if (!chatId) return null;
+        return this.lastDeviceScopeByChat.get(chatId) || null;
+    }
+
+    buildReplyKeyboard(rows = []) {
+        const keyboard = new Keyboard().resized();
+        rows.forEach((row) => {
+            if (!Array.isArray(row) || !row.length) return;
+            keyboard.row(...row.filter(Boolean).map((value) => String(value)));
+        });
+        return keyboard;
+    }
+
+    extractReplyActionMap(keyboard) {
+        const rows = Array.isArray(keyboard?.inline_keyboard)
+            ? keyboard.inline_keyboard
+            : null;
+        if (!rows?.length) return null;
+        const actionRows = rows
+            .map((row) =>
+                Array.isArray(row)
+                    ? row
+                          .map((button) => ({
+                              label: String(button?.text || "").trim(),
+                              data: String(button?.callback_data || "").trim(),
+                          }))
+                          .filter((button) => button.label && button.data)
+                    : [],
+            )
+            .filter((row) => row.length > 0);
+        return actionRows.length ? actionRows : null;
+    }
+
+    buildReplyKeyboardFromActionMap(actionMap = []) {
+        return this.buildReplyKeyboard(
+            actionMap.map((row) => row.map((button) => button.label)),
+        );
+    }
+
+    buildDevicesBackCallbackData(objectName = "") {
+        return `${CALLBACK_DEVICES_BACK_PREFIX}${encodeURIComponent(
+            String(objectName || "").trim(),
+        )}`;
     }
 
     buildMainMenuKeyboard() {
         return new InlineKeyboard()
             .text("🏘 К началу", CALLBACK_MAIN)
             .text("📟 Все устройства", CALLBACK_DEVICES);
+    }
+
+    buildObjectsReplyKeyboard(objects) {
+        return this.buildReplyKeyboard(
+            objects.map((item) => [`${objectIcon(item)} ${objectLabel(item)}`]),
+        );
     }
 
     buildObjectsKeyboard(objects) {
@@ -1764,10 +1982,13 @@ export class TelegramBotService {
                 )
                 .row();
         });
-        keyboard
-            .text("📟 Все устройства", CALLBACK_DEVICES)
-            .text("🏘 К началу", CALLBACK_MAIN);
         return keyboard;
+    }
+
+    buildDevicesReplyKeyboard(devices) {
+        const rows = devices.map((device) => [device.button_label]);
+        rows.push(["⬅️ Назад"]);
+        return this.buildReplyKeyboard(rows);
     }
 
     buildDevicesKeyboard(devices, currentObject = "") {
@@ -1781,16 +2002,665 @@ export class TelegramBotService {
                 .row();
         }
         if (currentObject) {
-            keyboard.text("🏘 К объектам", CALLBACK_OBJECTS_BACK).row();
+            keyboard.text("⬅️ Назад", CALLBACK_OBJECTS_BACK);
+            return keyboard;
         }
-        keyboard.text("🏘 К началу", CALLBACK_MAIN);
         return keyboard;
+    }
+
+    buildControllersReplyKeyboard(detail, controllerCards = []) {
+        const rows = [];
+        for (let index = 0; index < controllerCards.length; index += 2) {
+            const left = controllerCards[index];
+            const right = controllerCards[index + 1] || null;
+            rows.push(
+                [
+                    left ? `${controllerIcon(left.title)} ${left.title}` : "",
+                    right ? `${controllerIcon(right.title)} ${right.title}` : "",
+                ].filter(Boolean),
+            );
+        }
+        if (
+            detail?.access?.controllers?.quick_actions?.write !== false &&
+            this.quickActionMenu.items().length >= 3
+        ) {
+            const quickItems = this.quickActionMenu.items();
+            rows.unshift(quickItems.map((item) => item.label));
+        }
+        rows.push(["⬅️ Назад"]);
+        return this.buildReplyKeyboard(rows);
+    }
+
+    controllerKeyByTitle(title) {
+        const normalized = String(title || "").trim().toLowerCase();
+        if (normalized === "розетки") return "sockets";
+        if (normalized === "освещение") return "lights";
+        if (normalized === "метео") return "meteo";
+        if (normalized === "термостаты") return "thermo";
+        if (normalized === "баки") return "tanks";
+        if (normalized === "септик") return "septic";
+        if (normalized === "полив") return "watering";
+        return "";
+    }
+
+    async openControllerByKey(ctx, controller, deviceId, nodeId, user) {
+        const effectiveNodeId = nodeId > 0 ? nodeId : null;
+        if (controller === "sockets") {
+            await this.socketMenu.open(ctx, {
+                deviceId,
+                nodeId: effectiveNodeId,
+                user,
+                getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                replyMenu: this.replyMenu.bind(this),
+                mainMenuCallbackData: CALLBACK_MAIN,
+                controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                    `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+            });
+            return true;
+        }
+        if (controller === "lights") {
+            await this.lightMenu.open(ctx, {
+                deviceId,
+                nodeId: effectiveNodeId,
+                user,
+                getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                replyMenu: this.replyMenu.bind(this),
+                mainMenuCallbackData: CALLBACK_MAIN,
+                controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                    `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+            });
+            return true;
+        }
+        if (controller === "meteo") {
+            await this.meteoMenu.open(ctx, {
+                deviceId,
+                nodeId: effectiveNodeId,
+                user,
+                getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                replyMenu: this.replyMenu.bind(this),
+                mainMenuCallbackData: CALLBACK_MAIN,
+                controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                    `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+            });
+            return true;
+        }
+        if (controller === "thermo") {
+            await this.thermoMenu.open(ctx, {
+                deviceId,
+                nodeId: effectiveNodeId,
+                user,
+                getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                replyMenu: this.replyMenu.bind(this),
+                mainMenuCallbackData: CALLBACK_MAIN,
+                controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                    `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+            });
+            return true;
+        }
+        if (controller === "tanks") {
+            await this.tankMenu.open(ctx, {
+                deviceId,
+                nodeId: effectiveNodeId,
+                user,
+                getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                replyMenu: this.replyMenu.bind(this),
+                mainMenuCallbackData: CALLBACK_MAIN,
+                controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                    `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+            });
+            return true;
+        }
+        if (controller === "septic") {
+            await this.septicMenu.open(ctx, {
+                deviceId,
+                nodeId: effectiveNodeId,
+                user,
+                getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                replyMenu: this.replyMenu.bind(this),
+                mainMenuCallbackData: CALLBACK_MAIN,
+                controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                    `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+            });
+            return true;
+        }
+        if (controller === "watering") {
+            await this.wateringMenu.open(ctx, {
+                deviceId,
+                nodeId: effectiveNodeId,
+                user,
+                getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                replyMenu: this.replyMenu.bind(this),
+                mainMenuCallbackData: CALLBACK_MAIN,
+                controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                    `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+            });
+            return true;
+        }
+        return false;
+    }
+
+    withTextActionContext(ctx) {
+        if (typeof ctx?.answerCallbackQuery === "function") {
+            return ctx;
+        }
+        return {
+            ...ctx,
+            answerCallbackQuery: async () => {},
+        };
+    }
+
+    controllerMenuOptions(user) {
+        return {
+            getScopedDetail: this.getScopedTelegramDetail.bind(this),
+            replyMenu: this.replyMenu.bind(this),
+            mainMenuCallbackData: CALLBACK_MAIN,
+            controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+            user,
+        };
+    }
+
+    async dispatchReplyAction(ctx, data, user) {
+        const actionCtx = this.withTextActionContext(ctx);
+        const value = String(data || "").trim();
+        if (!value) return false;
+
+        if (value === CALLBACK_MAIN) {
+            await this.sendObjectsList(actionCtx, "", user);
+            return true;
+        }
+        if (value === CALLBACK_OBJECTS || value === CALLBACK_OBJECTS_BACK) {
+            await this.sendObjectsList(actionCtx, "", user);
+            return true;
+        }
+        if (value === CALLBACK_DEVICES) {
+            await this.sendObjectsList(
+                actionCtx,
+                "Выбери объект, чтобы открыть список устройств.",
+                user,
+            );
+            return true;
+        }
+        {
+            const match = value.match(
+                new RegExp(`^${CALLBACK_DEVICES_BACK_PREFIX}(.+)$`),
+            );
+            if (match) {
+                const objectName = decodeURIComponent(String(match[1] || "")).trim();
+                if (!objectName) {
+                    await this.sendObjectsList(actionCtx, "", user);
+                    return true;
+                }
+                await this.sendDevicesList(actionCtx, objectName, user);
+                return true;
+            }
+        }
+        {
+            const match = value.match(
+                new RegExp(`^${CALLBACK_DEVICE_PREFIX}(\\d+):(\\d+)$`),
+            );
+            if (match) {
+                const deviceId = Number(match[1]);
+                const nodeId = Number(match[2]);
+                await this.sendControllersList(
+                    actionCtx,
+                    deviceId,
+                    nodeId > 0 ? nodeId : null,
+                    user,
+                );
+                return true;
+            }
+        }
+        {
+            const match = value.match(
+                new RegExp(
+                    `^${CALLBACK_CONTROLLER_PREFIX}(\\d+):(\\d+):(sockets|lights|meteo|thermo|tanks|septic|watering)$`,
+                ),
+            );
+            if (match) {
+                return await this.openControllerByKey(
+                    actionCtx,
+                    String(match[3]),
+                    Number(match[1]),
+                    Number(match[2]),
+                    user,
+                );
+            }
+        }
+        {
+            const match = value.match(
+                new RegExp(`^${CALLBACK_TOGGLE_PREFIX}(\\d+):(\\d+):(sockets|lights):(\\d+)$`),
+            );
+            if (match) {
+                const deviceId = Number(match[1]);
+                const nodeId = Number(match[2]);
+                const controller = String(match[3]);
+                const itemId = Number(match[4]);
+                const options = this.controllerMenuOptions(user);
+                if (controller === "sockets") {
+                    await this.socketMenu.toggle(actionCtx, {
+                        deviceId,
+                        nodeId: nodeId > 0 ? nodeId : null,
+                        itemId,
+                        ...options,
+                    });
+                    return true;
+                }
+                await this.lightMenu.toggle(actionCtx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    ...options,
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(
+                /^menu:setall:(\d+):(\d+):(sockets|lights):(on|off)$/,
+            );
+            if (match) {
+                const deviceId = Number(match[1]);
+                const nodeId = Number(match[2]);
+                const controller = String(match[3]);
+                const state = String(match[4]);
+                const options = this.controllerMenuOptions(user);
+                if (controller === "sockets") {
+                    await this.socketMenu.setAll(actionCtx, {
+                        deviceId,
+                        nodeId: nodeId > 0 ? nodeId : null,
+                        state,
+                        ...options,
+                    });
+                    return true;
+                }
+                await this.lightMenu.setAll(actionCtx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    state,
+                    ...options,
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(
+                new RegExp(`^${CALLBACK_QUICK_PREFIX}(\\d+):(\\d+):(home|prepare|away)$`),
+            );
+            if (match) {
+                await this.quickActionMenu.run(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    actionKey: String(match[3]),
+                    user,
+                    replyMenu: this.replyMenu.bind(this),
+                    refreshControllers: async () => {
+                        await this.sendControllersList(
+                            actionCtx,
+                            Number(match[1]),
+                            Number(match[2]) > 0 ? Number(match[2]) : null,
+                            user,
+                        );
+                    },
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:thermo:view:(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.thermoMenu.openItem(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:thermo:power:(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.thermoMenu.togglePower(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:thermo:mode:(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.thermoMenu.cycleMode(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:thermo:target:(\d+):(\d+):(\d+):(-?\d+)$/);
+            if (match) {
+                await this.thermoMenu.adjustTarget(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    delta: Number(match[4]) / 10,
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:tanks:view:(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.tankMenu.openItem(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:tanks:power:(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.tankMenu.togglePower(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:septic:view:(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.septicMenu.openItem(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:septic:monitor:(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.septicMenu.toggleMonitor(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:watering:view:(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.wateringMenu.openItem(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:watering:status:(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.wateringMenu.toggleStatus(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:watering:day:(\d+):(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.wateringMenu.toggleWeekday(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    bit: Number(match[4]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:watering:slot:(\d+):(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.wateringMenu.openSlotEditor(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    slot: Number(match[4]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:watering:time:(\d+):(\d+):(\d+):(\d+):(-?\d+):(-?\d+)$/);
+            if (match) {
+                await this.wateringMenu.adjustTime(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    slot: Number(match[4]),
+                    hourDelta: Number(match[5]),
+                    minuteDelta: Number(match[6]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:watering:duration:(\d+):(\d+):(\d+):(\d+):(-?\d+)$/);
+            if (match) {
+                await this.wateringMenu.adjustDuration(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    slot: Number(match[4]),
+                    deltaMinutes: Number(match[5]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    async handleReplyKeyboardSelection(ctx, text, user) {
+        const actionMap = this.getReplyActionMap(ctx);
+        const directAction = actionMap
+            .flatMap((row) => row)
+            .find(
+                (button) =>
+                    button.label === String(text || "").trim() ||
+                    menuSelectionIncludes(text, button.label),
+            );
+        if (directAction?.data) {
+            return await this.dispatchReplyAction(ctx, directAction.data, user);
+        }
+
+        const state = this.getReplyMenuState(ctx);
+        if (!state) return false;
+
+        const value = String(text || "").trim();
+        const matchKey = normalizeMenuSelection(value);
+        if (!value) return false;
+
+        if (value === "⬅️ Назад") {
+            if (state.kind === "devices" || state.kind === "objects") {
+                await this.sendObjectsList(ctx, "", user);
+                return true;
+            }
+            if (state.kind === "controllers") {
+                await this.sendDevicesList(ctx, state.object_name || "", user);
+                return true;
+            }
+        }
+
+        if (state.kind === "objects") {
+            const objects = await this.listTelegramObjects(user || {});
+            const selected = objects
+                .map((item) => ({
+                    label: `${objectIcon(item)} ${objectLabel(item)}`,
+                    object_name: objectLabel(item),
+                }))
+                .find(
+                    (item) =>
+                        item.label === value ||
+                        normalizeMenuSelection(item.object_name) === matchKey ||
+                        menuSelectionIncludes(value, item.label) ||
+                        menuSelectionIncludes(value, item.object_name),
+                );
+            if (!selected?.object_name) {
+                return false;
+            }
+            await this.sendDevicesList(ctx, selected.object_name, user);
+            return true;
+        }
+
+        if (state.kind === "devices") {
+            const devices = await this.listTelegramDevices(
+                state.object_name || "",
+                user || {},
+            );
+            const selected = devices.find(
+                (item) =>
+                    item.label === value ||
+                    normalizeMenuSelection(item.button_label) === matchKey ||
+                    normalizeMenuSelection(item.name) === matchKey ||
+                    menuSelectionIncludes(value, item.label) ||
+                    menuSelectionIncludes(value, item.button_label) ||
+                    menuSelectionIncludes(value, item.name),
+            );
+            if (!selected) return false;
+            await this.sendControllersList(
+                ctx,
+                Number(selected.device_id),
+                Number(selected.node_id || 0) || null,
+                user,
+            );
+            return true;
+        }
+
+        if (state.kind === "controllers") {
+            const quickItem = this.quickActionMenu
+                .items()
+                .find((item) => item.label === value);
+            if (quickItem) {
+                await this.quickActionMenu.run(ctx, {
+                    deviceId: Number(state.device_id),
+                    nodeId: Number(state.node_id || 0) || null,
+                    actionKey: quickItem.key,
+                    user,
+                    replyMenu: this.replyMenu.bind(this),
+                });
+                return true;
+            }
+            const selected = (state.items || []).find(
+                (item) =>
+                    item.label === value ||
+                    item.match_key === matchKey ||
+                    menuSelectionIncludes(value, item.label),
+            );
+            if (!selected?.controller) return false;
+            return await this.openControllerByKey(
+                ctx,
+                selected.controller,
+                Number(state.device_id),
+                Number(state.node_id || 0),
+                user,
+            );
+        }
+
+        return false;
+    }
+
+    async handleGlobalTextSelection(ctx, text, user) {
+        const value = String(text || "").trim();
+        const matchKey = normalizeMenuSelection(value);
+        if (!matchKey) return false;
+
+        const controllerKey = this.controllerKeyByTitle(value);
+        const lastScope = this.getLastDeviceScope(ctx);
+        if (
+            controllerKey &&
+            lastScope &&
+            Number.isFinite(Number(lastScope.device_id))
+        ) {
+            return await this.openControllerByKey(
+                ctx,
+                controllerKey,
+                Number(lastScope.device_id),
+                Number(lastScope.node_id || 0),
+                user,
+            );
+        }
+
+        const objects = await this.listTelegramObjects(user || {});
+        const selectedObject = objects
+            .map((item) => ({
+                object_name: objectLabel(item),
+                label: `${objectIcon(item)} ${objectLabel(item)}`,
+            }))
+            .find(
+                (item) =>
+                    normalizeMenuSelection(item.object_name) === matchKey ||
+                    menuSelectionIncludes(value, item.object_name) ||
+                    menuSelectionIncludes(value, item.label),
+            );
+        if (selectedObject?.object_name) {
+            await this.sendDevicesList(ctx, selectedObject.object_name, user);
+            return true;
+        }
+
+        for (const objectItem of objects) {
+            const objectName = objectLabel(objectItem);
+            const devices = await this.listTelegramDevices(objectName, user || {});
+            const selectedDevice = devices.find(
+                (item) =>
+                    normalizeMenuSelection(item.button_label) === matchKey ||
+                    normalizeMenuSelection(item.name) === matchKey ||
+                    menuSelectionIncludes(value, item.button_label) ||
+                    menuSelectionIncludes(value, item.name),
+            );
+            if (!selectedDevice) continue;
+            await this.sendControllersList(
+                ctx,
+                Number(selectedDevice.device_id),
+                Number(selectedDevice.node_id || 0) || null,
+                user,
+            );
+            return true;
+        }
+
+        return false;
     }
 
     buildControllersKeyboard(detail) {
         const keyboard = new InlineKeyboard();
         const deviceId = Number(detail?.device_id);
         const nodeId = Number(detail?.node_id || 0);
+        const objectName = String(detail?.object_name || "").trim();
         const quickActionPolicy =
             detail?.access?.controllers?.quick_actions || null;
         const quickActionEnabled =
@@ -1916,8 +2786,12 @@ export class TelegramBotService {
             if (right) keyboard.text(right.label, right.data);
             keyboard.row();
         }
-        keyboard.text("🏘 К объектам", CALLBACK_OBJECTS_BACK).row();
-        keyboard.text("🏘 К началу", CALLBACK_MAIN);
+        keyboard.text(
+            "⬅️ Назад",
+            objectName.length()
+                ? this.buildDevicesBackCallbackData(objectName)
+                : CALLBACK_OBJECTS_BACK,
+        );
         return keyboard;
     }
 
@@ -1964,14 +2838,17 @@ export class TelegramBotService {
             const sanitized = sanitizeSummaryForSession(summary, user);
             if (!sanitized) continue;
             const masterName = device.name || `#${Number(device.device_id)}`;
+            const masterIcon = objectIcon({
+                icon: device.object_icon || device.object_type || "house",
+            });
             result.push({
                 device_id: Number(device.device_id),
                 node_id: null,
                 online: Boolean(device.online),
                 object_name: device.object_name || "",
                 name: masterName,
-                label: `#${Number(device.device_id)} ${masterName}`,
-                button_label: `${onlineIcon(device.online)} 📟 ${masterName}`,
+                label: `${masterIcon} ${masterName} (мастер)`,
+                button_label: `${masterIcon} ${masterName} (мастер)`,
             });
             const nodes = Array.isArray(sanitized?.stack?.nodes)
                 ? sanitized.stack.nodes
@@ -1995,8 +2872,8 @@ export class TelegramBotService {
                             : true,
                     object_name: device.object_name || "",
                     name: nodeName,
-                    label: `#${Number(device.device_id)}:${nodeId} ${nodeName}`,
-                    button_label: `${onlineIcon(typeof node?.online === "boolean" ? Boolean(node.online) : true)} 🧩 ${masterShort} / ${nodeName}`,
+                    label: `🧩 ${nodeName} (${masterShort})`,
+                    button_label: `🧩 ${nodeName} (${masterShort})`,
                 });
             }
         }
@@ -2171,6 +3048,7 @@ export class TelegramBotService {
             "stack",
             "authz",
         ]);
+        const deviceRow = await this.devicesDb.getByDeviceId(Number(deviceId));
         const sanitized = sanitizeSummaryForSession(summary, user || {});
         if (!sanitized) {
             const notes = this.diagnoseControllers(
@@ -2182,6 +3060,7 @@ export class TelegramBotService {
             logger.warn(
                 `telegram controllers unavailable for device ${deviceId}${nodeId ? `:${nodeId}` : ""}: ${notes.join(" | ")}`,
             );
+            this.setReplyMenuState(ctx, null);
             await this.replyMenu(
                 ctx,
                 [
@@ -2200,9 +3079,15 @@ export class TelegramBotService {
         scoped.device_id = Number(deviceId);
         scoped.node_id = nodeId ? Number(nodeId) : 0;
         const controllerCards = this.buildControllerCards(scoped);
+        const titleIcon = nodeId
+            ? "🧩"
+            : objectIcon({
+                  icon:
+                      deviceRow?.object_icon || deviceRow?.object_type || "house",
+              });
         const deviceLabel = nodeId
-            ? `${scoped.name || `Stack #${nodeId}`} (#${deviceId}:${nodeId})`
-            : `${scoped.name || `Устройство #${deviceId}`} (#${deviceId})`;
+            ? `${scoped.name || `Stack ${formatHexId(nodeId)}`} (${formatHexId(deviceId)}:${formatHexId(nodeId)})`
+            : `${scoped.name || `Устройство ${formatHexId(deviceId)}`} (${formatHexId(deviceId)})`;
         if (!controllerCards.length) {
             const notes = this.diagnoseControllers(
                 summary,
@@ -2213,22 +3098,47 @@ export class TelegramBotService {
             logger.warn(
                 `telegram controllers empty for device ${deviceId}${nodeId ? `:${nodeId}` : ""}: ${notes.join(" | ")}`,
             );
+            this.setReplyMenuState(ctx, {
+                kind: "controllers",
+                device_id: Number(deviceId),
+                node_id: nodeId ? Number(nodeId) : 0,
+                object_name: String(scoped?.object_name || "").trim(),
+                items: [],
+            });
             await this.replyMenu(
                 ctx,
                 [
-                    this.panelTitle(`🧩 ${deviceLabel}`, "Контроллеры"),
+                    this.panelTitle(`${titleIcon} ${deviceLabel}`, "Контроллеры"),
                     "Контроллеры не обнаружены.",
                     "",
                     "<b>Диагностика</b>",
                     ...notes.map((line) => `• ${escapeHtml(line)}`),
                 ].join("\n"),
                 new InlineKeyboard()
-                    .text("🏘 К объектам", CALLBACK_OBJECTS_BACK)
-                    .row()
-                    .text("🏘 К началу", CALLBACK_MAIN),
+                    .text(
+                        "⬅️ Назад",
+                        String(scoped?.object_name || "").trim().length
+                            ? this.buildDevicesBackCallbackData(
+                                  scoped.object_name,
+                              )
+                            : CALLBACK_OBJECTS_BACK,
+                    ),
             );
             return;
         }
+        this.setReplyMenuState(ctx, {
+            kind: "controllers",
+            device_id: Number(deviceId),
+            node_id: nodeId ? Number(nodeId) : 0,
+            object_name: String(scoped?.object_name || "").trim(),
+            items: controllerCards
+                .map((item) => ({
+                    label: `${controllerIcon(item.title)} ${item.title}`,
+                    controller: this.controllerKeyByTitle(item.title),
+                    match_key: normalizeMenuSelection(item.title),
+                }))
+                .filter((item) => item.controller),
+        });
         const lines = controllerCards.map(
             (item) =>
                 `${controllerIcon(item.title)} ${item.title}: <b>${escapeHtml(item.status)}</b>`,
@@ -2236,10 +3146,10 @@ export class TelegramBotService {
         await this.replyMenu(
             ctx,
             [
-                this.panelTitle(`🧩 ${deviceLabel}`, "Контроллеры"),
+                this.panelTitle(`${titleIcon} ${deviceLabel}`, "Контроллеры"),
                 lines.join("\n"),
             ].join("\n\n"),
-            this.buildControllersKeyboard(scoped),
+            this.buildControllersReplyKeyboard(scoped, controllerCards),
         );
     }
 
