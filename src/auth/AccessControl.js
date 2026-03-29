@@ -335,8 +335,21 @@ export function sanitizeSummaryForSession(summary, session = {}) {
             );
             if (!sanitizedUnit) continue;
             nextStackUnits[nodeId] = {
+                name: sanitizedUnit.name || unit.name || summary.name,
+                online:
+                    typeof sanitizedUnit.online === "boolean"
+                        ? sanitizedUnit.online
+                        : typeof unit.online === "boolean"
+                          ? unit.online
+                          : summary.online,
                 system: sanitizedUnit.system || {},
                 controllers: sanitizedUnit.controllers || {},
+                summary:
+                    sanitizedUnit.summary && typeof sanitizedUnit.summary === "object"
+                        ? sanitizedUnit.summary
+                        : unit.summary && typeof unit.summary === "object"
+                          ? unit.summary
+                          : null,
                 last_event: sanitizedUnit.last_event ?? unit.last_event ?? null,
             };
         }

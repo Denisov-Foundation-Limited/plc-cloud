@@ -49,6 +49,13 @@ export class DeviceWsServer {
                 }
             }, 10_000);
 
+            ws.on("error", (err) => {
+                const deviceId = this.registry.getDeviceIdBySocket(ws) || "-";
+                logger.warn(
+                    `device socket error: device_id: ${deviceId} error: ${err?.message || "unknown_error"}`,
+                );
+            });
+
             ws.on("pong", () => {
                 const deviceId = this.registry.getDeviceIdBySocket(ws);
                 if (!deviceId) return;
@@ -252,7 +259,30 @@ export class DeviceWsServer {
         }
 
         this.registry.markSeen(deviceId);
-        await this.devicesDb.updateLastSeen(deviceId, Date.now());
+        try {
+            await this.devicesDb.updateLastSeen(deviceId, Date.now());
+        } catch (err) {
+            if (err?.message === "device_not_found") {
+                logger.warn(
+                    `device session invalid: type=${message.type} session=${message.session_id || "-"} device=${deviceId} reason=device_not_found`,
+                );
+                if (message.type !== "pong") {
+                    this.send(ws, {
+                        v: this.proto.version,
+                        type: "error",
+                        id: crypto.randomUUID(),
+                        reply_to: message.id || undefined,
+                        payload: {
+                            code: "device_not_found",
+                            message: "Device removed",
+                        },
+                    });
+                }
+                ws.close();
+                return;
+            }
+            throw err;
+        }
 
         if (message.type === "ping") {
             this.send(ws, {
@@ -294,6 +324,7 @@ export class DeviceWsServer {
             if (this.resultHandler && replyKey) {
                 try {
                     this.resultHandler({
+                        message_type: message.type,
                         reply_to: String(replyKey),
                         device_id: Number(deviceId),
                         unit: scopeUnit || "local",
@@ -305,6 +336,14 @@ export class DeviceWsServer {
                             data && typeof data === "object"
                                 ? { ...data }
                                 : null,
+                        ok:
+                            message.type === "ack"
+                                ? Boolean(message.payload?.ok)
+                                : true,
+                        error:
+                            message.type === "ack" && message.payload?.ok === false
+                                ? String(message.payload?.error || "failed")
+                                : "",
                     });
                 } catch (err) {
                     logger.error(
@@ -314,6 +353,32 @@ export class DeviceWsServer {
             }
             if (message.reply_to) {
                 this.pendingScopes.delete(String(message.reply_to));
+            }
+        }
+
+        if (message.type === "error") {
+            const replyKey = message.reply_to || null;
+            if (this.resultHandler && replyKey) {
+                try {
+                    this.resultHandler({
+                        message_type: "error",
+                        reply_to: String(replyKey),
+                        device_id: Number(deviceId),
+                        unit: "local",
+                        node_id: null,
+                        data: null,
+                        ok: false,
+                        error: String(
+                            message.payload?.message ||
+                                message.payload?.code ||
+                                "device_error",
+                        ),
+                    });
+                } catch (err) {
+                    logger.error(
+                        `resultHandler failed: reply_to=${replyKey} device=${deviceId} error=${err?.message || "unknown_error"}`,
+                    );
+                }
             }
         }
 
@@ -347,6 +412,12 @@ export class DeviceWsServer {
             ) {
                 if (eventData.system && typeof eventData.system === "object") {
                     patch.system = eventData.system;
+                }
+                if (
+                    eventData.summary &&
+                    typeof eventData.summary === "object"
+                ) {
+                    patch.summary = eventData.summary;
                 }
                 if (
                     eventData.controllers &&

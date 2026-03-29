@@ -1303,7 +1303,10 @@ ui.deviceSocketsGrid?.addEventListener("click", (e) => {
             socketId,
             !currentOn,
         );
-        const scopedDetail = resolveScopedDetail(state.currentDeviceData);
+        const effectiveDetail = applyPendingDeviceOverlay(
+            state.currentDeviceData,
+        );
+        const scopedDetail = resolveScopedDetail(effectiveDetail);
         ui.renderDevice(scopedDetail);
         ui.renderSockets(scopedDetail);
     }
@@ -1906,11 +1909,19 @@ function triggerSocketPoll(key, delayMs = SOCKET_POLL_INTERVAL_MS) {
 }
 
 function patchSocketState(detail, socketId, nextState) {
+    return patchControllerState(detail, "sockets", socketId, nextState);
+}
+
+function patchLightState(detail, lightId, nextState) {
+    return patchControllerState(detail, "lights", lightId, nextState);
+}
+
+function patchControllerState(detail, controllerKey, itemId, nextState) {
     if (!detail || typeof detail !== "object") return detail;
     const patchList = (list) =>
         Array.isArray(list)
             ? list.map((item) =>
-                  Number(item?.id) === Number(socketId)
+                  Number(item?.id) === Number(itemId)
                       ? {
                             ...item,
                             state: Boolean(nextState),
@@ -1932,7 +1943,9 @@ function patchSocketState(detail, socketId, nextState) {
                     ...scoped,
                     controllers: {
                         ...(scoped.controllers || {}),
-                        sockets: patchList(scoped.controllers?.sockets),
+                        [controllerKey]: patchList(
+                            scoped.controllers?.[controllerKey],
+                        ),
                     },
                 },
             },
@@ -1943,9 +1956,36 @@ function patchSocketState(detail, socketId, nextState) {
         ...detail,
         controllers: {
             ...(detail.controllers || {}),
-            sockets: patchList(detail.controllers?.sockets),
+            [controllerKey]: patchList(detail.controllers?.[controllerKey]),
         },
     };
+}
+
+function pendingScopeMatches(op) {
+    const currentUnit = state.currentUnit === "stack" ? "stack" : "local";
+    const currentNodeId =
+        currentUnit === "stack" ? Number(state.currentNodeId || 0) : 0;
+    return (
+        Number(op?.deviceId || 0) === Number(state.currentDevice?.device_id || 0) &&
+        op?.unit === currentUnit &&
+        Number(op?.nodeId || 0) === currentNodeId
+    );
+}
+
+function applyPendingDeviceOverlay(detail) {
+    if (!detail || typeof detail !== "object" || !state.currentDevice) {
+        return detail;
+    }
+    let next = detail;
+    for (const op of socketPendingOps.values()) {
+        if (!pendingScopeMatches(op)) continue;
+        next = patchSocketState(next, op.socketId, op.expectedState);
+    }
+    for (const op of lightPendingOps.values()) {
+        if (!pendingScopeMatches(op)) continue;
+        next = patchLightState(next, op.lightId, op.expectedState);
+    }
+    return next;
 }
 
 function resolveSocketState(detail, socketId) {
@@ -2189,9 +2229,14 @@ function resolveLightState(detail, lightId) {
 function reconcileSocketPending(detail) {
     if (!state.currentDevice) return;
     const currentDeviceId = Number(state.currentDevice.device_id);
+    const currentUnit = state.currentUnit === "stack" ? "stack" : "local";
+    const currentNodeId =
+        currentUnit === "stack" ? Number(state.currentNodeId || 0) : 0;
     const keysToClear = [];
     for (const [key, op] of socketPendingOps.entries()) {
         if (Number(op.deviceId) !== currentDeviceId) continue;
+        if (op.unit !== currentUnit) continue;
+        if (Number(op.nodeId || 0) !== currentNodeId) continue;
         const current = resolveSocketState(detail, op.socketId);
         if (current === null) continue;
         if (current === Boolean(op.expectedState)) {
@@ -2208,9 +2253,14 @@ function reconcileSocketPending(detail) {
 function reconcileLightPending(detail) {
     if (!state.currentDevice) return;
     const currentDeviceId = Number(state.currentDevice.device_id);
+    const currentUnit = state.currentUnit === "stack" ? "stack" : "local";
+    const currentNodeId =
+        currentUnit === "stack" ? Number(state.currentNodeId || 0) : 0;
     const keysToClear = [];
     for (const [key, op] of lightPendingOps.entries()) {
         if (Number(op.deviceId) !== currentDeviceId) continue;
+        if (op.unit !== currentUnit) continue;
+        if (Number(op.nodeId || 0) !== currentNodeId) continue;
         const current = resolveLightState(detail, op.lightId);
         if (current === null) continue;
         if (current === Boolean(op.expectedState)) {
@@ -2246,11 +2296,18 @@ function handleWsMessage(msg) {
             msg,
         );
         renderTargetPicker(state.currentDeviceData);
-        const scopedDetail = resolveScopedDetail(state.currentDeviceData);
         scheduleStackPendingRetry(state.currentDeviceData);
+        reconcileSocketPending(state.currentDeviceData);
+        reconcileLightPending(state.currentDeviceData);
+        const effectiveDetail = applyPendingDeviceOverlay(
+            state.currentDeviceData,
+        );
+        const scopedDetail = resolveScopedDetail(effectiveDetail);
         ui.renderDevice(scopedDetail);
         ui.renderSockets(scopedDetail);
+        syncSocketPendingUi();
         ui.renderLights(scopedDetail);
+        syncLightPendingUi();
         ui.renderTanks(scopedDetail);
         ui.renderSecurity(scopedDetail);
         ui.renderMeteo(scopedDetail);
@@ -2275,15 +2332,19 @@ function handleWsMessage(msg) {
             msg.device,
         );
         renderTargetPicker(state.currentDeviceData);
-        const scopedDetail = resolveScopedDetail(state.currentDeviceData);
         scheduleStackPendingRetry(state.currentDeviceData);
-        maybeShowEventToast(scopedDetail);
+        reconcileSocketPending(state.currentDeviceData);
+        reconcileLightPending(state.currentDeviceData);
+        const scopedDetailRaw = resolveScopedDetail(state.currentDeviceData);
+        maybeShowEventToast(scopedDetailRaw);
+        const effectiveDetail = applyPendingDeviceOverlay(
+            state.currentDeviceData,
+        );
+        const scopedDetail = resolveScopedDetail(effectiveDetail);
         ui.renderDevice(scopedDetail);
         ui.renderSockets(scopedDetail);
-        reconcileSocketPending(state.currentDeviceData);
         syncSocketPendingUi();
         ui.renderLights(scopedDetail);
-        reconcileLightPending(state.currentDeviceData);
         syncLightPendingUi();
         ui.renderTanks(scopedDetail);
         ui.renderSecurity(scopedDetail);

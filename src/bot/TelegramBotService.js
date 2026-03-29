@@ -2543,15 +2543,19 @@ export class TelegramBotService {
                 state.object_name || "",
                 user || {},
             );
-            const selected = devices.find(
-                (item) =>
-                    item.label === value ||
-                    normalizeMenuSelection(item.button_label) === matchKey ||
-                    normalizeMenuSelection(item.name) === matchKey ||
-                    menuSelectionIncludes(value, item.label) ||
-                    menuSelectionIncludes(value, item.button_label) ||
-                    menuSelectionIncludes(value, item.name),
-            );
+            const selected =
+                devices.find(
+                    (item) =>
+                        item.label === value ||
+                        normalizeMenuSelection(item.button_label) ===
+                            matchKey ||
+                        normalizeMenuSelection(item.name) === matchKey,
+                ) ||
+                devices.find(
+                    (item) =>
+                        menuSelectionIncludes(value, item.label) ||
+                        menuSelectionIncludes(value, item.button_label),
+                );
             if (!selected) return false;
             await this.sendControllersList(
                 ctx,
@@ -2636,13 +2640,17 @@ export class TelegramBotService {
         for (const objectItem of objects) {
             const objectName = objectLabel(objectItem);
             const devices = await this.listTelegramDevices(objectName, user || {});
-            const selectedDevice = devices.find(
-                (item) =>
-                    normalizeMenuSelection(item.button_label) === matchKey ||
-                    normalizeMenuSelection(item.name) === matchKey ||
-                    menuSelectionIncludes(value, item.button_label) ||
-                    menuSelectionIncludes(value, item.name),
-            );
+            const selectedDevice =
+                devices.find(
+                    (item) =>
+                        normalizeMenuSelection(item.button_label) ===
+                            matchKey ||
+                        normalizeMenuSelection(item.name) === matchKey,
+                ) ||
+                devices.find(
+                    (item) =>
+                        menuSelectionIncludes(value, item.button_label),
+                );
             if (!selectedDevice) continue;
             await this.sendControllersList(
                 ctx,
@@ -2900,41 +2908,124 @@ export class TelegramBotService {
             ? controllers.watering
             : [];
         const leak = Array.isArray(controllers.leak) ? controllers.leak : [];
-        return [
+        const socketsSummary =
+            !Array.isArray(controllers.sockets) &&
+            controllers.sockets &&
+            typeof controllers.sockets === "object"
+                ? controllers.sockets
+                : null;
+        const lightsSummary =
+            !Array.isArray(controllers.lights) &&
+            controllers.lights &&
+            typeof controllers.lights === "object"
+                ? controllers.lights
+                : null;
+        const meteoSummary =
+            !Array.isArray(controllers.meteo) &&
+            controllers.meteo &&
+            typeof controllers.meteo === "object"
+                ? controllers.meteo
+                : null;
+        const thermoSummary =
+            !Array.isArray(controllers.thermo) &&
+            controllers.thermo &&
+            typeof controllers.thermo === "object"
+                ? controllers.thermo
+                : null;
+        const tanksSummary =
+            !Array.isArray(controllers.tanks) &&
+            controllers.tanks &&
+            typeof controllers.tanks === "object"
+                ? controllers.tanks
+                : null;
+        const septicSummary =
+            !Array.isArray(controllers.septic) &&
+            controllers.septic &&
+            typeof controllers.septic === "object"
+                ? controllers.septic
+                : null;
+        const wateringSummary =
+            !Array.isArray(controllers.watering) &&
+            controllers.watering &&
+            typeof controllers.watering === "object"
+                ? controllers.watering
+                : null;
+        const leakSummary =
+            !Array.isArray(controllers.leak) &&
+            controllers.leak &&
+            typeof controllers.leak === "object"
+                ? controllers.leak
+                : null;
+        const cards = [
             {
                 title: "Розетки",
-                status: `${sockets.filter((x) => x?.state).length}/${sockets.length}`,
-                visible: sockets.length > 0,
+                status:
+                    sockets.length > 0
+                        ? `${sockets.filter((x) => x?.state).length}/${sockets.length}`
+                        : `${Number(socketsSummary?.on_count || 0)}/${Number(socketsSummary?.enabled_count || 0)}`,
+                visible:
+                    sockets.length > 0 ||
+                    Number(socketsSummary?.enabled_count || 0) > 0,
             },
             {
                 title: "Освещение",
-                status: `${lights.filter((x) => x?.state).length}/${lights.length}`,
-                visible: lights.length > 0,
+                status:
+                    lights.length > 0
+                        ? `${lights.filter((x) => x?.state).length}/${lights.length}`
+                        : `${Number(lightsSummary?.on_count || 0)}/${Number(lightsSummary?.enabled_count || 0)}`,
+                visible:
+                    lights.length > 0 ||
+                    Number(lightsSummary?.enabled_count || 0) > 0,
             },
             {
                 title: "Метео",
-                status: `${meteo.filter((x) => x?.ok).length}/${meteo.length}`,
-                visible: meteo.length > 0,
+                status:
+                    meteo.length > 0
+                        ? `${meteo.filter((x) => x?.ok).length}/${meteo.length}`
+                        : `${Number(meteoSummary?.ok_count || 0)}/${Number(meteoSummary?.enabled_count || 0)}`,
+                visible:
+                    meteo.length > 0 ||
+                    Number(meteoSummary?.enabled_count || 0) > 0,
             },
             {
                 title: "Термостаты",
-                status: `${thermo.filter((x) => x?.heat_on || x?.cool_on).length}/${thermo.length}`,
-                visible: thermo.length > 0,
+                status:
+                    thermo.length > 0
+                        ? `${thermo.filter((x) => x?.heat_on || x?.cool_on).length}/${thermo.length}`
+                        : `${Number(thermoSummary?.active_count || 0)}/${Number(thermoSummary?.enabled_count || 0)}`,
+                visible:
+                    thermo.length > 0 ||
+                    Number(thermoSummary?.enabled_count || 0) > 0,
             },
             {
                 title: "Баки",
-                status: `${tanks.filter((x) => x?.pump_on || x?.alarm_on).length}/${tanks.length}`,
-                visible: tanks.length > 0,
+                status:
+                    tanks.length > 0
+                        ? `${tanks.filter((x) => x?.pump_on || x?.alarm_on).length}/${tanks.length}`
+                        : `${Number(tanksSummary?.alert_count || 0)}/${Number(tanksSummary?.enabled_count || 0)}`,
+                visible:
+                    tanks.length > 0 ||
+                    Number(tanksSummary?.enabled_count || 0) > 0,
             },
             {
                 title: "Септик",
-                status: `${septic.filter((x) => x?.warning || x?.alarm).length}/${septic.length}`,
-                visible: septic.length > 0,
+                status:
+                    septic.length > 0
+                        ? `${septic.filter((x) => x?.warning || x?.alarm).length}/${septic.length}`
+                        : `${Number(septicSummary?.alert_count || 0)}/${Number(septicSummary?.enabled_count || 0)}`,
+                visible:
+                    septic.length > 0 ||
+                    Number(septicSummary?.enabled_count || 0) > 0,
             },
             {
                 title: "Полив",
-                status: `${watering.filter((x) => x?.active).length}/${watering.length}`,
-                visible: watering.length > 0,
+                status:
+                    watering.length > 0
+                        ? `${watering.filter((x) => x?.active).length}/${watering.length}`
+                        : `${Number(wateringSummary?.active_count || 0)}/${Number(wateringSummary?.enabled_count || 0)}`,
+                visible:
+                    watering.length > 0 ||
+                    Number(wateringSummary?.enabled_count || 0) > 0,
             },
             {
                 title: "Охрана",
@@ -2965,10 +3056,71 @@ export class TelegramBotService {
             },
             {
                 title: "Протечки",
-                status: `${leak.filter((x) => x?.wet || x?.alarm_latched).length}/${leak.length}`,
-                visible: leak.length > 0,
+                status:
+                    leak.length > 0
+                        ? `${leak.filter((x) => x?.wet || x?.alarm_latched).length}/${leak.length}`
+                        : `${Number(leakSummary?.alert_count || 0)}/${Number(leakSummary?.enabled_count || 0)}`,
+                visible:
+                    leak.length > 0 ||
+                    Number(leakSummary?.enabled_count || 0) > 0,
             },
         ].filter((item) => item.visible);
+        if (cards.length > 0) {
+            return cards;
+        }
+
+        const summary =
+            detail?.summary && typeof detail.summary === "object"
+                ? detail.summary
+                : detail?.system?.summary &&
+                    typeof detail.system.summary === "object"
+                  ? detail.system.summary
+                  : null;
+        if (!summary) {
+            return cards;
+        }
+
+        const fallbackCards = [];
+        const fallbackSocketsSummary =
+            summary.sockets && typeof summary.sockets === "object"
+                ? summary.sockets
+                : null;
+        if (Number(fallbackSocketsSummary?.enabled || 0) > 0) {
+            fallbackCards.push({
+                title: "Розетки",
+                status: `${Number(fallbackSocketsSummary?.on || 0)}/${Number(fallbackSocketsSummary?.enabled || 0)}`,
+                visible: true,
+            });
+        }
+        const fallbackLightsSummary =
+            summary.lights && typeof summary.lights === "object"
+                ? summary.lights
+                : null;
+        if (Number(fallbackLightsSummary?.enabled || 0) > 0) {
+            fallbackCards.push({
+                title: "Освещение",
+                status: `${Number(fallbackLightsSummary?.on || 0)}/${Number(fallbackLightsSummary?.enabled || 0)}`,
+                visible: true,
+            });
+        }
+        return fallbackCards;
+    }
+
+    hasReadyControllerData(detail, nodeId = null) {
+        if (!detail || typeof detail !== "object") {
+            return false;
+        }
+        if (this.buildControllerCards(detail).length > 0) {
+            return true;
+        }
+        if (!nodeId) {
+            return Object.keys(detail.controllers || {}).length > 0;
+        }
+        const sockets = detail?.controllers?.sockets;
+        if (Array.isArray(sockets) && sockets.length > 0) {
+            return true;
+        }
+        return false;
     }
 
     diagnoseControllers(summary, sanitized, nodeId = null, session = {}) {
@@ -3172,6 +3324,17 @@ export class TelegramBotService {
         nodeId = null,
         what = ["controllers"],
     ) {
+        const requestWhat = Array.isArray(what) ? [...what] : ["controllers"];
+        if (nodeId) {
+            if (!requestWhat.includes("system")) {
+                requestWhat.unshift("system");
+            }
+            const filtered = requestWhat.filter(
+                (item) => item !== "stack" && item !== "authz",
+            );
+            requestWhat.length = 0;
+            requestWhat.push(...filtered);
+        }
         const initial = await this.registry.buildSummary(
             deviceId,
             this.devicesDb,
@@ -3179,9 +3342,11 @@ export class TelegramBotService {
         const initialScoped = nodeId
             ? this.resolveScopedDetail(initial, nodeId)
             : initial;
-        const hasControllers =
-            Object.keys(initialScoped?.controllers || {}).length > 0;
-        if (hasControllers || !this.deviceWs) {
+        const hasReadyControllers = this.hasReadyControllerData(
+            initialScoped,
+            nodeId,
+        );
+        if (hasReadyControllers || !this.deviceWs) {
             return initial;
         }
 
@@ -3190,7 +3355,7 @@ export class TelegramBotService {
         const sendRefresh = () => {
             this.deviceWs.sendGet(
                 Number(deviceId),
-                what,
+                requestWhat,
                 unit,
                 nodeId || undefined,
             );
@@ -3202,23 +3367,21 @@ export class TelegramBotService {
                 );
             }
         };
-        const now = Date.now();
-        const lastRefreshAt =
-            this.lastStackSummaryRefreshByScope.get(refreshScopeKey) || 0;
-        if (
-            !nodeId ||
-            !lastRefreshAt ||
-            now - lastRefreshAt >= STACK_SUMMARY_REFRESH_COOLDOWN_MS
-        ) {
-            sendRefresh();
-            if (nodeId) {
-                this.lastStackSummaryRefreshByScope.set(refreshScopeKey, now);
-            }
+        sendRefresh();
+        if (nodeId) {
+            this.lastStackSummaryRefreshByScope.set(refreshScopeKey, Date.now());
         }
 
+        const maxWaitMs = nodeId ? 8000 : 3200;
+        const refreshEveryMs = nodeId ? 500 : 700;
         const startedAt = Date.now();
-        while (Date.now() - startedAt < 1800) {
+        let lastRefreshAt = startedAt;
+        while (Date.now() - startedAt < maxWaitMs) {
             await this.delay(120);
+            if (Date.now() - lastRefreshAt >= refreshEveryMs) {
+                sendRefresh();
+                lastRefreshAt = Date.now();
+            }
             const current = await this.registry.buildSummary(
                 deviceId,
                 this.devicesDb,
@@ -3226,7 +3389,7 @@ export class TelegramBotService {
             const scoped = nodeId
                 ? this.resolveScopedDetail(current, nodeId)
                 : current;
-            if (Object.keys(scoped?.controllers || {}).length > 0) {
+            if (this.hasReadyControllerData(scoped, nodeId)) {
                 return current;
             }
         }
@@ -3266,6 +3429,12 @@ export class TelegramBotService {
                     : detail.online,
             system: scoped.system || {},
             controllers: scoped.controllers || {},
+            summary:
+                scoped.summary && typeof scoped.summary === "object"
+                    ? scoped.summary
+                    : detail.summary && typeof detail.summary === "object"
+                      ? detail.summary
+                      : null,
             last_event: scoped.last_event ?? detail.last_event,
         };
     }

@@ -27,6 +27,8 @@ export class WebWsServer {
         this.clients = new Set();
         this.deviceWs = null;
         this.pendingGets = new Map();
+        this.pendingCmds = new Map();
+        this.lastDirtySignatureByDevice = new Map();
     }
 
     setDeviceWs(deviceWs) {
@@ -58,6 +60,12 @@ export class WebWsServer {
             ws.sessionToken = token;
             ws.subscriptions = new Set();
             this.clients.add(ws);
+
+            ws.on("error", (err) => {
+                logger.warn(
+                    `web socket error: user: ${this.describeSessionUser(ws.session)} error: ${err?.message || "unknown_error"}`,
+                );
+            });
 
             ws.on("message", async (data) => {
                 let msg;
@@ -251,6 +259,18 @@ export class WebWsServer {
                         });
                         return;
                     }
+                    this.pendingCmds.set(String(result.id), {
+                        ws,
+                        session: ws.session,
+                        device_id: Number(msg.device_id),
+                        controller: String(msg.controller || "").trim(),
+                        action: String(msg.action || "").trim(),
+                        unit: msg.unit || "local",
+                        node_id:
+                            (msg.unit || "local") === "stack" && msg.node_id
+                                ? Number(msg.node_id)
+                                : null,
+                    });
                     this.send(ws, {
                         type: "command_sent",
                         id: result.id,
@@ -269,6 +289,9 @@ export class WebWsServer {
                 for (const [key, pending] of this.pendingGets.entries()) {
                     if (pending?.ws === ws) this.pendingGets.delete(key);
                 }
+                for (const [key, pending] of this.pendingCmds.entries()) {
+                    if (pending?.ws === ws) this.pendingCmds.delete(key);
+                }
             });
         });
     }
@@ -276,19 +299,52 @@ export class WebWsServer {
     async handleDeviceResult(result = {}) {
         const key = String(result.reply_to || "");
         if (!key) return;
-        const pending = this.pendingGets.get(key);
-        if (!pending) return;
-        this.pendingGets.delete(key);
-        if (!pending.ws || pending.ws.readyState !== 1) return;
-        const data =
-            result.data && typeof result.data === "object" ? result.data : {};
+        const pendingGet = this.pendingGets.get(key);
+        if (pendingGet) {
+            this.pendingGets.delete(key);
+            if (!pendingGet.ws || pendingGet.ws.readyState !== 1) return;
+            if (result.message_type === "error" || result.ok === false) {
+                this.send(pendingGet.ws, {
+                    type: "command_error",
+                    error: result.error || "request_failed",
+                    device_id: Number(pendingGet.device_id),
+                });
+                return;
+            }
+            const data =
+                result.data && typeof result.data === "object"
+                    ? result.data
+                    : {};
+            this.send(pendingGet.ws, {
+                type: "get_result",
+                device_id: Number(pendingGet.device_id),
+                unit: pendingGet.unit || "local",
+                node_id: pendingGet.node_id || undefined,
+                data,
+            });
+            return;
+        }
 
-        this.send(pending.ws, {
-            type: "get_result",
-            device_id: Number(pending.device_id),
-            unit: pending.unit || "local",
-            node_id: pending.node_id || undefined,
-            data,
+        const pendingCmd = this.pendingCmds.get(key);
+        if (!pendingCmd) return;
+        this.pendingCmds.delete(key);
+        if (!pendingCmd.ws || pendingCmd.ws.readyState !== 1) return;
+        if (result.message_type === "error" || result.ok === false) {
+            this.send(pendingCmd.ws, {
+                type: "command_error",
+                error: result.error || "command_failed",
+                device_id: Number(pendingCmd.device_id),
+            });
+            return;
+        }
+        this.send(pendingCmd.ws, {
+            type: "command_ack",
+            id: key,
+            device_id: Number(pendingCmd.device_id),
+            controller: pendingCmd.controller || undefined,
+            action: pendingCmd.action || undefined,
+            unit: pendingCmd.unit || "local",
+            node_id: pendingCmd.node_id || undefined,
         });
     }
 
@@ -349,12 +405,38 @@ export class WebWsServer {
             }
         }
         const lastEvent = summary?.last_event;
-        if (String(lastEvent?.kind || "") === "stack.node") {
+        const dirtySignature = this.getDevicesDirtySignature_(
+            summary?.device_id,
+            lastEvent,
+        );
+        if (dirtySignature) {
             this.broadcast({
                 type: "devices_dirty",
                 object_name: summary?.object_name || "",
                 device_id: summary?.device_id,
             });
         }
+    }
+
+    clearDeviceTransientState(deviceId) {
+        const key = String(Number(deviceId));
+        this.lastDirtySignatureByDevice.delete(key);
+    }
+
+    getDevicesDirtySignature_(deviceId, eventPayload) {
+        if (String(eventPayload?.kind || "") !== "stack.node") return "";
+        const key = String(Number(deviceId));
+        let signature = "";
+        try {
+            signature = JSON.stringify(eventPayload || {});
+        } catch (err) {
+            signature = String(eventPayload?.reason || "");
+        }
+        if (!signature) return "";
+        if (this.lastDirtySignatureByDevice.get(key) === signature) {
+            return "";
+        }
+        this.lastDirtySignatureByDevice.set(key, signature);
+        return signature;
     }
 }

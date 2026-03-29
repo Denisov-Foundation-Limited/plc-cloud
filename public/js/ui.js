@@ -323,29 +323,40 @@ function summarizeControllers(controllers = {}) {
 
 function controllerIconSvg(key) {
     const k = String(key || "").toLowerCase();
-    if (k === "lights")
-        return '<path d="M12 3a6 6 0 0 0-3.8 10.7V17h7.6v-3.3A6 6 0 0 0 12 3Z"/><path d="M9 20h6"/><path d="M9.6 17h4.8"/>';
-    if (k === "sockets")
-        return '<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="9" cy="10" r="1"/><circle cx="15" cy="10" r="1"/><path d="M10 14h4v3h-4z"/>';
-    if (k === "security")
-        return '<path d="M12 3 5 6v5c0 4.4 3 8.5 7 10 4-1.5 7-5.6 7-10V6z"/><path d="M9 12l2 2 4-4"/>';
-    if (k === "meteo")
-        return '<path d="M7 16h9a3.5 3.5 0 0 0 .3-7A4.8 4.8 0 0 0 7.7 7.6 3.7 3.7 0 0 0 7 16Z"/><path d="M11 10v5"/><circle cx="11" cy="17" r="2.2"/>';
-    if (k === "thermo")
-        return '<rect x="7" y="3" width="10" height="18" rx="5"/><path d="M12 7v8"/><circle cx="12" cy="16" r="3"/><path d="M18.5 7.5h1.5"/><path d="M18.5 11.5h1.5"/><path d="M18.5 15.5h1.5"/>';
-    if (k === "tanks")
-        return '<rect x="6" y="4" width="12" height="16" rx="3"/><path d="M8 13h8"/>';
-    if (k === "septic")
-        return '<rect x="5" y="5" width="14" height="14" rx="3"/><path d="M8 11h8M8 15h8"/>';
-    if (k === "watering")
-        return '<path d="M4 14h9v4h3v-4h2c2.2 0 4 1.8 4 4"/><path d="M19 20a2 2 0 0 1-4 0c0-1.3 2-3 2-3s2 1.7 2 3Z"/>';
-    if (k === "ring")
-        return '<circle cx="12" cy="12" r="8"/><path d="M9 12h6"/><path d="M12 9v6"/>';
-    if (k === "avr")
-        return '<path d="M4 12h16"/><path d="M12 4v16"/><circle cx="12" cy="12" r="3"/>';
-    if (k === "leak")
-        return '<path d="M12 4c3 5 6 8 6 11a6 6 0 0 1-12 0c0-3 3-6 6-11Z"/>';
-    return '<circle cx="12" cy="12" r="8"/>';
+    if (k === "lights") {
+        return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><path d="M48 14c-14.4 0-26 11.6-26 26 0 10 5.6 18.7 13.9 23.1 2.6 1.4 4.1 4 4.1 6.9V72h16v-2c0-2.9 1.5-5.5 4.1-6.9C68.4 58.7 74 50 74 40c0-14.4-11.6-26-26-26Z" stroke="currentColor" stroke-width="5"/><path d="M38 78h20M40 84h16" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M40 46c2.5-4 5.2-6 8-6s5.5 2 8 6" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>';
+    }
+    if (k === "sockets") {
+        return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><rect x="18" y="12" width="60" height="72" rx="18" stroke="currentColor" stroke-width="5"/><circle cx="36" cy="36" r="6" fill="currentColor"/><circle cx="60" cy="36" r="6" fill="currentColor"/><rect x="41" y="54" width="14" height="20" rx="5" fill="currentColor"/></svg>';
+    }
+    if (k === "security") {
+        return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><path d="M48 12 22 22v22c0 18 10.7 30.8 26 39 15.3-8.2 26-21 26-39V22L48 12Z" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/><rect x="38" y="40" width="20" height="18" rx="4" stroke="currentColor" stroke-width="5"/><path d="M42 40v-6a6 6 0 1 1 12 0v6" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>';
+    }
+    if (k === "meteo") {
+        return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><path d="M28 58c-7.7 0-14-6.3-14-14s6.3-14 14-14c2.2 0 4.2.5 6.1 1.4C37.5 24 44.1 20 52 20c11 0 20 9 20 20v1c6.6 1 12 6.7 12 13.6C84 62 77.9 68 70.4 68H28Z" stroke="currentColor" stroke-width="5"/><path d="M48 42v24" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><circle cx="48" cy="34" r="8" stroke="currentColor" stroke-width="5"/><path d="M62 72c0 5.5-4.5 10-10 10s-10-4.5-10-10c0-7 10-18 10-18s10 11 10 18Z" fill="currentColor" opacity=".45"/></svg>';
+    }
+    if (k === "thermo") {
+        return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><rect x="30" y="12" width="36" height="72" rx="18" stroke="currentColor" stroke-width="5"/><path d="M48 24v34" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><circle cx="48" cy="66" r="12" fill="currentColor"/><path d="M24 28h10M24 42h10M24 56h10" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>';
+    }
+    if (k === "tanks") {
+        return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><rect x="22" y="14" width="52" height="68" rx="12" stroke="currentColor" stroke-width="5"/><path d="M30 56c8-4 28-4 36 0v14H30V56Z" fill="currentColor" opacity=".45"/><path d="M38 14v-6h20v6" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M30 44h36" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>';
+    }
+    if (k === "septic") {
+        return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><rect x="18" y="18" width="60" height="50" rx="10" stroke="currentColor" stroke-width="5"/><path d="M18 52h60" stroke="currentColor" stroke-width="5"/><path d="M32 76h32" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M48 68v8" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M28 42c10-4 30-4 40 0" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>';
+    }
+    if (k === "watering") {
+        return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><path d="M34 18h28" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><circle cx="34" cy="18" r="4" fill="currentColor"/><circle cx="62" cy="18" r="4" fill="currentColor"/><circle cx="48" cy="18" r="7" fill="currentColor"/><path d="M48 25v11" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M22 42h34c9 0 17 8 17 17v2c0 4-3 7-7 7h-8V57c0-4-3-7-7-7H22z" fill="currentColor"/><path d="M58 42h8c10 0 18 8 18 18v12h-8V61c0-6-5-11-11-11h-7z" fill="currentColor"/><path d="M70 72h14v4H70z" fill="currentColor"/><path d="M66 79c0 6.6-5.4 12-12 12s-12-5.4-12-12c0-7.6 12-20 12-20s12 12.4 12 20Z" fill="currentColor" opacity=".7"/><path d="M57 72c2 3 3 6 3 9 0 4.5-2.7 8-7 8" stroke="#0b1220" stroke-width="3" stroke-linecap="round" opacity=".55"/></svg>';
+    }
+    if (k === "ring") {
+        return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><path d="M48 18c-12 0-22 10-22 22v11c0 7-2.8 13.7-7.8 18.7L14 74h68l-4.2-4.3C72.8 64.7 70 58 70 51V40c0-12-10-22-22-22Z" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/><path d="M40 80c2 4 4.8 6 8 6s6-2 8-6" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>';
+    }
+    if (k === "avr") {
+        return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><path d="M54 10 28 52h18l-4 34 26-42H50l4-34Z" fill="currentColor"/><path d="M18 24h18M60 72h18" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>';
+    }
+    if (k === "leak") {
+        return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><path d="M48 14c-10 14-24 29.1-24 43a24 24 0 0 0 48 0c0-13.9-14-29-24-43Z" stroke="currentColor" stroke-width="5"/><path d="M30 70c8-5 28-5 36 0" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><circle cx="48" cy="58" r="8" fill="currentColor" opacity=".45"/></svg>';
+    }
+    return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><circle cx="48" cy="48" r="30" stroke="currentColor" stroke-width="5"/></svg>';
 }
 
 function thermoStatusVisualSvg(mode, heatOn, coolOn) {
@@ -1093,9 +1104,7 @@ export class Ui {
                 (card) => `
         <div class="ctrl-card" data-controller="${esc(card.key)}">
           <div class="ctrl-icon-wrap" aria-hidden="true">
-            <svg class="ctrl-icon-svg" viewBox="0 0 24 24">
-              ${controllerIconSvg(card.key)}
-            </svg>
+            ${controllerIconSvg(card.key)}
           </div>
           <div class="ctrl-main">
             <div class="ctrl-head">

@@ -11,6 +11,9 @@
 /**********************************************************************/
 import { InlineKeyboard } from "grammy";
 import { canSendControllerCommand } from "../../auth/AccessControl.js";
+import { rootLogger } from "../../utils/Logger.js";
+
+const logger = rootLogger.child("TG_BOT");
 
 function escapeHtml(value) {
     return String(value ?? "")
@@ -38,6 +41,11 @@ function buttonLabel(name, state, fallback) {
     return `${state ? "🟢" : "⚪"} ${short}`;
 }
 
+async function safeAnswerCallbackQuery(ctx, options = {}) {
+    if (!ctx?.callbackQuery?.id) return;
+    await ctx.answerCallbackQuery(options);
+}
+
 export class TgSocketMenu {
     constructor({ registry, devicesDb }) {
         this.registry = registry;
@@ -61,7 +69,12 @@ export class TgSocketMenu {
             controllersCallbackData,
         },
     ) {
-        const detail = await getScopedDetail(deviceId, nodeId, user);
+        const detail = await this.waitForSocketDetail(
+            deviceId,
+            nodeId,
+            user,
+            getScopedDetail,
+        );
         if (!detail) {
             await replyMenu(
                 ctx,
@@ -94,8 +107,8 @@ export class TgSocketMenu {
                 ctx,
                 "Нет доступных розеток.",
                 this.buildBackKeyboard(
-                    deviceId,
-                    nodeId,
+                    Number(detail?.device_id || 0),
+                    Number(detail?.node_id || 0),
                     controllersCallbackData,
                     mainMenuCallbackData,
                 ),
@@ -122,6 +135,31 @@ export class TgSocketMenu {
         );
     }
 
+    async waitForSocketDetail(deviceId, nodeId, user, getScopedDetail) {
+        let detail = await getScopedDetail(deviceId, nodeId, user);
+        const hasSockets = (value) =>
+            Array.isArray(value?.controllers?.sockets) &&
+            value.controllers.sockets.length > 0;
+        if (hasSockets(detail) || !nodeId || !this.deviceWs) {
+            return detail;
+        }
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < 5000) {
+            this.deviceWs.sendGet(
+                Number(deviceId),
+                ["system", "controllers"],
+                "stack",
+                nodeId || undefined,
+            );
+            await this.delay(250);
+            detail = await getScopedDetail(deviceId, nodeId, user);
+            if (hasSockets(detail)) {
+                return detail;
+            }
+        }
+        return detail;
+    }
+
     async toggle(
         ctx,
         {
@@ -140,7 +178,7 @@ export class TgSocketMenu {
             this.devicesDb,
         );
         if (!summary) {
-            await ctx.answerCallbackQuery({
+            await safeAnswerCallbackQuery(ctx, {
                 text: "Устройство оффлайн",
                 show_alert: true,
             });
@@ -155,7 +193,7 @@ export class TgSocketMenu {
                 { id: itemId },
             )
         ) {
-            await ctx.answerCallbackQuery({
+            await safeAnswerCallbackQuery(ctx, {
                 text: "Нет прав на управление",
                 show_alert: true,
             });
@@ -176,25 +214,42 @@ export class TgSocketMenu {
             nodeId ? "stack" : "local",
             nodeId || undefined,
         );
+        logger.info(
+            `telegram sockets toggle dispatch: device_id: ${Number(deviceId)} node_id: ${Number(nodeId || 0)} item_id: ${Number(itemId)} sent: ${result?.ok ? "yes" : "no"}`,
+        );
         if (!result?.ok) {
-            await ctx.answerCallbackQuery({
+            await safeAnswerCallbackQuery(ctx, {
                 text: "Команда не отправлена",
                 show_alert: true,
             });
             return;
         }
         const detail = await getScopedDetail(deviceId, nodeId, user);
+        const currentItem = Array.isArray(detail?.controllers?.sockets)
+            ? detail.controllers.sockets.find(
+                  (item) => Number(item?.id) === Number(itemId),
+              )
+            : null;
+        const expectedState = currentItem ? !Boolean(currentItem.state) : null;
         this.deviceWs?.sendGet(
             Number(deviceId),
-            ["controllers"],
+            nodeId ? ["system", "controllers"] : ["controllers"],
             nodeId ? "stack" : "local",
             nodeId || undefined,
         );
-        await ctx.answerCallbackQuery({ text: "Переключаю..." });
+        await safeAnswerCallbackQuery(ctx, { text: "Переключаю..." });
         if (!detail) return;
+        const refreshed = await this.waitForSocketState(
+            Number(deviceId),
+            nodeId,
+            user,
+            getScopedDetail,
+            Number(itemId),
+            expectedState,
+        );
         await this.renderDetail(
             ctx,
-            this.patchOneState(detail, itemId, (current) => !current),
+            refreshed || detail,
             replyMenu,
             mainMenuCallbackData,
             controllersCallbackData,
@@ -216,7 +271,7 @@ export class TgSocketMenu {
     ) {
         const detail = await getScopedDetail(deviceId, nodeId, user);
         if (!detail) {
-            await ctx.answerCallbackQuery({
+            await safeAnswerCallbackQuery(ctx, {
                 text: "Устройство недоступно",
                 show_alert: true,
             });
@@ -226,7 +281,7 @@ export class TgSocketMenu {
             ? detail.controllers.sockets
             : [];
         if (!list.length) {
-            await ctx.answerCallbackQuery({
+            await safeAnswerCallbackQuery(ctx, {
                 text: "Нет доступных розеток",
                 show_alert: true,
             });
@@ -266,11 +321,11 @@ export class TgSocketMenu {
         }
         this.deviceWs?.sendGet(
             Number(deviceId),
-            ["controllers"],
+            nodeId ? ["system", "controllers"] : ["controllers"],
             nodeId ? "stack" : "local",
             nodeId || undefined,
         );
-        await ctx.answerCallbackQuery({
+        await safeAnswerCallbackQuery(ctx, {
             text: targetState === "on" ? "Включаю все..." : "Выключаю все...",
         });
         await this.renderDetail(
@@ -353,6 +408,37 @@ export class TgSocketMenu {
         return new Promise((resolve) =>
             setTimeout(resolve, Math.max(0, Number(ms) || 0)),
         );
+    }
+
+    async waitForSocketState(
+        deviceId,
+        nodeId,
+        user,
+        getScopedDetail,
+        itemId,
+        expectedState = null,
+    ) {
+        const startedAt = Date.now();
+        let lastDetail = await getScopedDetail(deviceId, nodeId, user);
+        while (Date.now() - startedAt < 3000) {
+            this.deviceWs?.sendGet(
+                Number(deviceId),
+                nodeId ? ["system", "controllers"] : ["controllers"],
+                nodeId ? "stack" : "local",
+                nodeId || undefined,
+            );
+            await this.delay(250);
+            lastDetail = await getScopedDetail(deviceId, nodeId, user);
+            const item = Array.isArray(lastDetail?.controllers?.sockets)
+                ? lastDetail.controllers.sockets.find(
+                      (entry) => Number(entry?.id) === Number(itemId),
+                  )
+                : null;
+            if (!item) continue;
+            if (expectedState === null) return lastDetail;
+            if (Boolean(item.state) === Boolean(expectedState)) return lastDetail;
+        }
+        return lastDetail;
     }
 
     patchOneState(detail, itemId, updater) {

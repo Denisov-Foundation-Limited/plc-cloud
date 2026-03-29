@@ -1432,7 +1432,19 @@ pre {
 .controllers-grid-page {
     display: grid;
     gap: 12px;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 1280px) {
+    .controllers-grid-page {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 860px) {
+    .controllers-grid-page {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 .network-grid {
@@ -1443,7 +1455,7 @@ pre {
 
 .sockets-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
 }
 
@@ -2239,10 +2251,13 @@ pre {
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    min-width: 0;
 }
 
 .socket-name {
     font-weight: 600;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .socket-meta {
@@ -3225,6 +3240,10 @@ button.btn-off:hover:not(:disabled),
 }
 
 @media (max-width: 980px) {
+    .sockets-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .watering-grid .tile {
         padding: 14px;
     }
@@ -3321,6 +3340,14 @@ button.btn-off:hover:not(:disabled),
 }
 
 @media (max-width: 640px) {
+    .controllers-grid-page {
+        grid-template-columns: 1fr;
+    }
+
+    .sockets-grid {
+        grid-template-columns: 1fr;
+    }
+
     .watering-grid .tile {
         padding: 12px;
     }

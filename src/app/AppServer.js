@@ -68,6 +68,7 @@ export class AppServer {
             onDeviceDisconnect: (deviceId) => {
                 const disconnected = this.registry.disconnect(deviceId);
                 if (disconnected && this.webWs) {
+                    this.webWs.clearDeviceTransientState?.(deviceId);
                     this.webWs.broadcast({
                         type: "device_offline",
                         device_id: deviceId,
@@ -92,6 +93,7 @@ export class AppServer {
                 void this.telegramBotService?.notifyDeviceOnline?.(deviceId);
             },
             onDeviceOffline: (deviceId) => {
+                this.webWs?.clearDeviceTransientState?.(deviceId);
                 this.webWs?.broadcast({
                     type: "device_offline",
                     device_id: deviceId,
@@ -110,6 +112,7 @@ export class AppServer {
 
         this.offlineTimer = setInterval(() => {
             this.registry.expireStale((deviceId) => {
+                this.webWs?.clearDeviceTransientState?.(deviceId);
                 this.webWs?.broadcast({
                     type: "device_offline",
                     device_id: deviceId,
