@@ -80,6 +80,7 @@ export class HttpFactory {
         const scope = this.container.createScope();
         scope.register({
             app: asValue(app),
+            publicDir: asValue(this.publicDir),
             onDeviceDisconnect: asValue(onDeviceDisconnect),
             nowMs: asValue(this.nowMs),
         });

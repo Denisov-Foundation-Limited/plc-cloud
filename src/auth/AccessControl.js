@@ -19,6 +19,7 @@ const CONTROLLER_KEYS = [
     "septic",
     "watering",
     "security",
+    "cameras",
     "ring",
     "avr",
     "leak",

@@ -16,12 +16,16 @@ import {
 } from "../auth/AccessControl.js";
 import { NOTIFICATION_CATALOG } from "../notifications/NotificationCatalog.js";
 import { rootLogger } from "../utils/Logger.js";
+import express from "express";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 const logger = rootLogger.child("API");
 
 export class ApiRouter {
     constructor({
         app,
+        publicDir,
         usersDb,
         devicesDb,
         sessions,
@@ -31,6 +35,7 @@ export class ApiRouter {
         telegramBotService,
     }) {
         this.app = app;
+        this.publicDir = publicDir;
         this.usersDb = usersDb;
         this.devicesDb = devicesDb;
         this.sessions = sessions;
@@ -41,6 +46,70 @@ export class ApiRouter {
     }
 
     init() {
+        this.app.post(
+            "/api/device/photo",
+            express.raw({
+                type: ["image/jpeg", "application/octet-stream"],
+                limit: "4mb",
+            }),
+            this.requireDeviceApiKey(),
+            async (req, res) => {
+                const body = req.body;
+                if (!Buffer.isBuffer(body) || body.length === 0) {
+                    res.status(400).json({ ok: false, error: "photo_required" });
+                    return;
+                }
+                const contentType = String(req.get("content-type") || "").toLowerCase();
+                if (!contentType.includes("image/jpeg") && !contentType.includes("application/octet-stream")) {
+                    res.status(415).json({ ok: false, error: "jpeg_required" });
+                    return;
+                }
+                if (body.length > 4 * 1024 * 1024) {
+                    res.status(413).json({ ok: false, error: "photo_too_large" });
+                    return;
+                }
+
+                const row = req.deviceRow;
+                const deviceId = Number(row?.device_id || 0);
+                const cameraIdRaw = Number(req.query?.camera_id || 0);
+                const cameraId = Number.isInteger(cameraIdRaw) && cameraIdRaw > 0 ? cameraIdRaw : 0;
+                const now = Date.now();
+                const relDir = cameraId > 0
+                    ? path.posix.join("uploads", "devices", String(deviceId), `camera_${cameraId}`)
+                    : path.posix.join("uploads", "devices", String(deviceId));
+                const fsDir = cameraId > 0
+                    ? path.join(this.publicDir, "uploads", "devices", String(deviceId), `camera_${cameraId}`)
+                    : path.join(this.publicDir, "uploads", "devices", String(deviceId));
+                const fileName = `${now}.jpg`;
+                const latestName = "latest.jpg";
+                const fsPath = path.join(fsDir, fileName);
+                const latestFsPath = path.join(fsDir, latestName);
+                const relUrl = `/${path.posix.join(relDir, fileName)}`;
+                const latestUrl = `/${path.posix.join(relDir, latestName)}`;
+                try {
+                    await fs.mkdir(fsDir, { recursive: true });
+                    await fs.writeFile(fsPath, body);
+                    await fs.writeFile(latestFsPath, body);
+                    logger.info(
+                        `device photo uploaded: device_id: ${deviceId} camera_id: ${cameraId || 0} bytes: ${body.length} path: ${relUrl} latest: ${latestUrl}`,
+                    );
+                    res.json({
+                        ok: true,
+                        device_id: deviceId,
+                        camera_id: cameraId || undefined,
+                        size: body.length,
+                        url: relUrl,
+                        latest_url: latestUrl,
+                    });
+                } catch (err) {
+                    logger.error(
+                        `device photo save failed: device_id: ${deviceId} camera_id: ${cameraId || 0} error: ${err?.message || "unknown_error"}`,
+                    );
+                    res.status(500).json({ ok: false, error: "photo_save_failed" });
+                }
+            },
+        );
+
         this.app.post("/api/login", async (req, res) => {
             const { username, password } = req.body || {};
             const ok = await this.usersDb.validateCredentials(
@@ -680,6 +749,23 @@ export class ApiRouter {
                 return;
             }
             req.session = session;
+            next();
+        };
+    }
+
+    requireDeviceApiKey() {
+        return async (req, res, next) => {
+            const apiKey = String(req.get("x-api-key") || req.query?.api_key || "").trim();
+            if (!apiKey) {
+                res.status(401).json({ ok: false, error: "api_key_required" });
+                return;
+            }
+            const row = await this.devicesDb.getByApiKey(apiKey);
+            if (!row) {
+                res.status(403).json({ ok: false, error: "api_key_invalid" });
+                return;
+            }
+            req.deviceRow = row;
             next();
         };
     }

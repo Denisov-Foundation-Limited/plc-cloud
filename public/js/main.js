@@ -382,6 +382,7 @@ function showEventToast(text) {
 function maybeShowEventToast(detail) {
     const eventPayload = detail?.last_event;
     if (!eventPayload || typeof eventPayload !== "object") return;
+    if (!Boolean(state.currentSession?.telegram_notify_events)) return;
     const reason = String(eventPayload.reason || "").trim().toLowerCase();
     if (reason === "periodic") return;
     if (
@@ -986,6 +987,11 @@ ui.backToDevicesFromControllers.addEventListener("click", () => {
     leaveDevice();
 });
 
+ui.backToControllersFromCameras?.addEventListener("click", () => {
+    if (!state.currentDevice) return;
+    ui.show("deviceControllers");
+});
+
 ui.backToControllersFromSockets.addEventListener("click", () => {
     if (!state.currentDevice) return;
     ui.show("deviceControllers");
@@ -1230,6 +1236,10 @@ ui.deviceControllersGrid?.addEventListener("click", (e) => {
     const card = e.target.closest("[data-controller]");
     if (!card || !state.currentDevice) return;
     const controller = card.dataset.controller;
+    if (controller === "cameras") {
+        ui.show("deviceCameras");
+        return;
+    }
     if (controller === "sockets") {
         ui.show("deviceSockets");
         return;
@@ -1273,6 +1283,30 @@ ui.deviceControllersGrid?.addEventListener("click", (e) => {
     if (controller === "leak") {
         ui.show("deviceLeak");
     }
+});
+
+ui.deviceCamerasGrid?.addEventListener("click", (e) => {
+    const btn = e.target.closest('[data-action="snapshot"]');
+    const tile = e.target.closest("[data-camera-id]");
+    if (!btn || !tile || !state.currentDevice) return;
+    if (tile.classList.contains("disabled") || btn.disabled) return;
+    const id = Number(tile.dataset.cameraId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    ui.setCamerasNotice(`Камера #${id}: запрашиваем снимок...`);
+    btn.disabled = true;
+    const sent = sendCmd("cameras", "snapshot", { id }, "local", null);
+    if (!sent) {
+        btn.disabled = false;
+        ui.setStatus("Оффлайн", false);
+        ui.setCamerasNotice(`Камера #${id}: команда не отправлена`);
+        return;
+    }
+    [600, 1800, 3600, 5600].forEach((delayMs) => {
+        setTimeout(() => {
+            if (!state.currentDevice) return;
+            requestDeviceSnapshot({ loading: false });
+        }, delayMs);
+    });
 });
 
 ui.deviceSocketsGrid?.addEventListener("click", (e) => {
@@ -1659,6 +1693,7 @@ function selectDevice(device) {
     ui.setRingNotice("");
     ui.setAvrNotice("");
     ui.setLeakNotice("");
+    ui.setCamerasNotice("");
     renderTargetPicker(device);
     subscribeDevice(device.device_id);
     requestDeviceSnapshot();
@@ -2304,6 +2339,7 @@ function handleWsMessage(msg) {
         );
         const scopedDetail = resolveScopedDetail(effectiveDetail);
         ui.renderDevice(scopedDetail);
+        ui.renderCameras(effectiveDetail);
         ui.renderSockets(scopedDetail);
         syncSocketPendingUi();
         ui.renderLights(scopedDetail);
@@ -2342,6 +2378,7 @@ function handleWsMessage(msg) {
         );
         const scopedDetail = resolveScopedDetail(effectiveDetail);
         ui.renderDevice(scopedDetail);
+        ui.renderCameras(effectiveDetail);
         ui.renderSockets(scopedDetail);
         syncSocketPendingUi();
         ui.renderLights(scopedDetail);
@@ -2379,6 +2416,7 @@ function handleWsMessage(msg) {
         ui.setRingNotice("Устройство оффлайн");
         ui.setAvrNotice("Устройство оффлайн");
         ui.setLeakNotice("Устройство оффлайн");
+        ui.setCamerasNotice("Устройство оффлайн");
     }
 
     if (
@@ -2420,6 +2458,7 @@ function handleWsMessage(msg) {
         ui.setRingNotice(`Ошибка команды: ${msg.error}`);
         ui.setAvrNotice(`Ошибка команды: ${msg.error}`);
         ui.setLeakNotice(`Ошибка команды: ${msg.error}`);
+        ui.setCamerasNotice(`Ошибка команды: ${msg.error}`);
     }
 }
 

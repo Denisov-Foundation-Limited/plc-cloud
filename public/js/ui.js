@@ -29,6 +29,21 @@ function statusBadge(label, tone = "neutral") {
   `;
 }
 
+function summaryIndicator(label, value, tone = "neutral", hint = "") {
+    const safeTone = String(tone || "neutral");
+    const safeHint = hint ? `<span class="summary-indicator-hint">${esc(hint)}</span>` : "";
+    return `
+    <div class="summary-indicator summary-indicator-${safeTone}">
+      <div class="summary-indicator-head">
+        <span class="summary-indicator-dot" aria-hidden="true"></span>
+        <span class="summary-indicator-label">${esc(label)}</span>
+      </div>
+      <div class="summary-indicator-value">${esc(value)}</div>
+      ${safeHint}
+    </div>
+  `;
+}
+
 function asArray(value) {
     return Array.isArray(value) ? value : [];
 }
@@ -222,6 +237,7 @@ function summarizeControllers(controllers = {}) {
     const sockets = asArray(controllers.sockets);
     const lights = asArray(controllers.lights);
     const meteo = asArray(controllers.meteo);
+    const cameras = asArray(controllers.cameras);
     const thermo = asArray(controllers.thermo);
     const tanks = asArray(controllers.tanks);
     const septic = asArray(controllers.septic);
@@ -249,6 +265,13 @@ function summarizeControllers(controllers = {}) {
             status: `${meteo.filter((x) => x.ok).length}/${meteo.length}`,
             online: meteo.some((x) => x.enabled),
             visible: meteo.length > 0,
+        },
+        {
+            key: "cameras",
+            title: "Камеры",
+            status: `${cameras.filter((x) => x.enabled).length}/${cameras.length}`,
+            online: cameras.some((x) => x.enabled),
+            visible: cameras.length > 0,
         },
         {
             key: "thermo",
@@ -335,6 +358,9 @@ function controllerIconSvg(key) {
     if (k === "meteo") {
         return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><path d="M28 58c-7.7 0-14-6.3-14-14s6.3-14 14-14c2.2 0 4.2.5 6.1 1.4C37.5 24 44.1 20 52 20c11 0 20 9 20 20v1c6.6 1 12 6.7 12 13.6C84 62 77.9 68 70.4 68H28Z" stroke="currentColor" stroke-width="5"/><path d="M48 42v24" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><circle cx="48" cy="34" r="8" stroke="currentColor" stroke-width="5"/><path d="M62 72c0 5.5-4.5 10-10 10s-10-4.5-10-10c0-7 10-18 10-18s10 11 10 18Z" fill="currentColor" opacity=".45"/></svg>';
     }
+    if (k === "cameras") {
+        return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><rect x="12" y="22" width="54" height="40" rx="10" stroke="currentColor" stroke-width="5"/><circle cx="39" cy="42" r="12" stroke="currentColor" stroke-width="5"/><path d="M66 34h10l8-6v28l-8-6H66z" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/><path d="M24 26l8-10h16l8 10" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    }
     if (k === "thermo") {
         return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><rect x="30" y="12" width="36" height="72" rx="18" stroke="currentColor" stroke-width="5"/><path d="M48 24v34" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><circle cx="48" cy="66" r="12" fill="currentColor"/><path d="M24 28h10M24 42h10M24 56h10" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>';
     }
@@ -398,6 +424,7 @@ export class Ui {
         this.deviceControllersView = document.getElementById(
             "deviceControllersView",
         );
+        this.deviceCamerasView = document.getElementById("deviceCamerasView");
         this.deviceSocketsView = document.getElementById("deviceSocketsView");
         this.deviceLightsView = document.getElementById("deviceLightsView");
         this.deviceTanksView = document.getElementById("deviceTanksView");
@@ -469,6 +496,7 @@ export class Ui {
         this.deviceControllersGrid = document.getElementById(
             "deviceControllersGrid",
         );
+        this.deviceCamerasGrid = document.getElementById("deviceCamerasGrid");
         this.deviceSocketsGrid = document.getElementById("deviceSocketsGrid");
         this.deviceLightsGrid = document.getElementById("deviceLightsGrid");
         this.deviceTanksGrid = document.getElementById("deviceTanksGrid");
@@ -502,6 +530,8 @@ export class Ui {
         this.refreshSecurityBtn = document.getElementById("refreshSecurity");
         this.refreshMeteoBtn = document.getElementById("refreshMeteo");
         this.deviceNotice = document.getElementById("deviceNotice");
+        this.deviceCamerasNotice =
+            document.getElementById("deviceCamerasNotice");
         this.deviceSocketsNotice = document.getElementById(
             "deviceSocketsNotice",
         );
@@ -536,6 +566,9 @@ export class Ui {
         this.backToDevices = document.getElementById("backToDevices");
         this.backToDevicesFromControllers = document.getElementById(
             "backToDevicesFromControllers",
+        );
+        this.backToControllersFromCameras = document.getElementById(
+            "backToControllersFromCameras",
         );
         this.backToControllersFromSockets = document.getElementById(
             "backToControllersFromSockets",
@@ -589,6 +622,11 @@ export class Ui {
 
     setDeviceNotice(text = "") {
         this.deviceNotice.textContent = text;
+    }
+
+    setCamerasNotice(text = "") {
+        if (this.deviceCamerasNotice)
+            this.deviceCamerasNotice.textContent = text;
     }
 
     setSocketsNotice(text = "") {
@@ -742,6 +780,7 @@ export class Ui {
         const targets = [
             this.deviceStatusBody,
             this.deviceControllersGrid,
+            this.deviceCamerasGrid,
             this.deviceSocketsGrid,
             this.deviceLightsGrid,
             this.deviceTanksGrid,
@@ -789,6 +828,7 @@ export class Ui {
             devices: this.devicesView,
             device: this.deviceView,
             deviceControllers: this.deviceControllersView,
+            deviceCameras: this.deviceCamerasView,
             deviceSockets: this.deviceSocketsView,
             deviceLights: this.deviceLightsView,
             deviceTanks: this.deviceTanksView,
@@ -855,6 +895,10 @@ export class Ui {
             "hidden",
             view !== "deviceControllers",
         );
+        this.deviceCamerasView.classList.toggle(
+            "hidden",
+            view !== "deviceCameras",
+        );
         this.deviceSocketsView.classList.toggle(
             "hidden",
             view !== "deviceSockets",
@@ -903,6 +947,7 @@ export class Ui {
         const inDevicePages =
             view === "device" ||
             view === "deviceControllers" ||
+            view === "deviceCameras" ||
             view === "deviceSockets" ||
             view === "deviceLights" ||
             view === "deviceTanks" ||
@@ -919,6 +964,7 @@ export class Ui {
         this.menuControllersBtn.classList.toggle(
             "active",
             view === "deviceControllers" ||
+                view === "deviceCameras" ||
                 view === "deviceSockets" ||
                 view === "deviceLights" ||
                 view === "deviceTanks" ||
@@ -1157,6 +1203,81 @@ export class Ui {
             </div>
             <div class="socket-meta">${!enabled ? statusBadge("Отключена", "disabled") : statusBadge(on ? "Включена" : "Выключена", on ? "on" : "off")}</div>
             <div class="socket-pending-text">Ожидание...</div>
+          </div>
+        </article>
+      `;
+            })
+            .join("");
+    }
+
+    renderCameras(detail) {
+        if (!this.deviceCamerasGrid) return;
+        const cameras = asArray(detail?.controllers?.cameras).filter((camera) =>
+            Boolean(camera?.enabled),
+        );
+        if (!cameras.length) {
+            this.deviceCamerasGrid.innerHTML = this.renderEmptyState(
+                "Нет включенных камер",
+                "Обновить",
+            );
+            return;
+        }
+
+        this.deviceCamerasGrid.innerHTML = cameras
+            .map((camera) => {
+                const id = Number(camera?.id);
+                const enabled = Boolean(camera?.enabled);
+                const busy = Boolean(camera?.busy);
+                const latestUrl = String(camera?.latest_url || "").trim();
+                const lastError = String(camera?.last_error || "").trim();
+                const updatedMs = Number(camera?.updated_ms || 0);
+                const writable = controllerAccess(
+                    detail,
+                    "cameras",
+                    id,
+                    "snapshot",
+                ).write;
+                const statusText = !enabled
+                    ? "Отключена"
+                    : busy
+                      ? "Получаем фото..."
+                      : lastError
+                        ? lastError
+                        : latestUrl
+                          ? "Фото загружено в облако"
+                          : "Снимок еще не получен";
+                const statusTone = !enabled
+                    ? "disabled"
+                    : busy
+                      ? "warn"
+                      : lastError
+                        ? "alert"
+                        : latestUrl
+                          ? "ready"
+                          : "neutral";
+                const previewUrl = latestUrl
+                    ? `${latestUrl}${latestUrl.includes("?") ? "&" : "?"}v=${encodeURIComponent(String(updatedMs || Date.now()))}`
+                    : "";
+                return `
+        <article class="camera-tile ${enabled ? "" : "disabled"}" data-camera-id="${id}">
+          <div class="camera-preview">
+            <div class="camera-preview-badge">
+              <span class="camera-status-dot ${busy ? "busy" : enabled ? "ok" : ""}"></span>
+              <span>#${id}</span>
+            </div>
+            ${previewUrl ? `<img src="${esc(previewUrl)}" alt="${esc(camera?.name || `Камера ${id}`)}" loading="lazy">` : ""}
+            ${previewUrl ? "" : `<div class="camera-preview-empty">Нет снимка</div>`}
+          </div>
+          <div class="camera-side">
+            <div class="camera-title">${esc(camera?.name || `Камера #${id}`)}</div>
+            <div class="camera-meta">
+              ${statusBadge(statusText, statusTone)}
+            </div>
+            <div class="camera-url">${latestUrl ? `Cloud URL: ${esc(latestUrl)}` : "Cloud URL появится после первого снимка"}</div>
+            <div class="camera-actions">
+              <button class="ghost btn-sm camera-btn" data-action="snapshot" ${enabled && writable && !busy ? "" : "disabled"}>Получить фото</button>
+            </div>
+            <div class="camera-inline-status">${esc(statusText)}</div>
           </div>
         </article>
       `;
@@ -1405,10 +1526,10 @@ export class Ui {
         );
 
         this.deviceSecuritySummary.innerHTML = `
-      <span class="pill">Статус: ${armed ? "На охране" : "Снято"}</span>
-      <span class="pill">Тревога: ${alarm ? "Да" : "Нет"}</span>
-      <span class="pill">GSM: ${gsmOk ? "Доступен" : "Нет связи"}</span>
-      <span class="pill">Контур: ${enabled ? "Включен" : "Отключен"}</span>
+      ${summaryIndicator("Режим", armed ? "На охране" : "Снято", alarm ? "alert" : armed ? "ready" : "off")}
+      ${summaryIndicator("Тревога", alarm ? "Активна" : "Нет", alarm ? "alert" : "ready")}
+      ${summaryIndicator("GSM", gsmOk ? "На связи" : "Нет связи", gsmOk ? "ready" : "warn")}
+      ${summaryIndicator("Контур", enabled ? "Включен" : "Отключен", enabled ? "on" : "off")}
     `;
 
         this.deviceSecurityActions
