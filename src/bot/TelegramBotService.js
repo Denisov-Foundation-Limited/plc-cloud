@@ -24,6 +24,7 @@ import { TgThermoMenu } from "./menu/TgThermoMenu.js";
 import { TgTankMenu } from "./menu/TgTankMenu.js";
 import { TgSepticMenu } from "./menu/TgSepticMenu.js";
 import { TgWateringMenu } from "./menu/TgWateringMenu.js";
+import { TgCameraMenu } from "./menu/TgCameraMenu.js";
 import {
     eventPolicyKey,
     isEventAllowedByPrefs,
@@ -86,6 +87,7 @@ function controllerIcon(title) {
     if (key.includes("бак")) return "🛢";
     if (key.includes("септик")) return "🚰";
     if (key.includes("полив")) return "💧";
+    if (key.includes("камер")) return "📷";
     if (key.includes("охран")) return "🛡";
     if (key.includes("звон")) return "🔔";
     if (key.includes("авр")) return "⚙";
@@ -178,6 +180,7 @@ export class TelegramBotService {
         this.tankMenu = new TgTankMenu({ registry, devicesDb });
         this.septicMenu = new TgSepticMenu({ registry, devicesDb });
         this.wateringMenu = new TgWateringMenu({ registry, devicesDb });
+        this.cameraMenu = new TgCameraMenu({ registry, devicesDb });
         this.lastSummaryByDevice = new Map();
         this.lastEventSignatureByDevice = new Map();
         this.lastStackSummaryRefreshByScope = new Map();
@@ -200,6 +203,7 @@ export class TelegramBotService {
         this.tankMenu.setDeviceWs(deviceWs);
         this.septicMenu.setDeviceWs(deviceWs);
         this.wateringMenu.setDeviceWs(deviceWs);
+        this.cameraMenu.setDeviceWs(deviceWs);
     }
 
     isEnabled() {
@@ -865,7 +869,7 @@ export class TelegramBotService {
 
         this.bot.callbackQuery(
             new RegExp(
-                `^${CALLBACK_CONTROLLER_PREFIX}(\\d+):(\\d+):(sockets|lights|meteo|thermo|tanks|septic|watering)$`,
+                `^${CALLBACK_CONTROLLER_PREFIX}(\\d+):(\\d+):(sockets|lights|meteo|thermo|tanks|septic|watering|cameras)$`,
             ),
             async (ctx) => {
                 await ctx.answerCallbackQuery();
@@ -970,6 +974,20 @@ export class TelegramBotService {
                     });
                     return;
                 }
+                if (controller === "cameras") {
+                    await this.cameraMenu.open(ctx, {
+                        deviceId,
+                        nodeId: nodeId > 0 ? nodeId : null,
+                        user,
+                        getScopedDetail:
+                            this.getScopedTelegramDetail.bind(this),
+                        replyMenu: this.replyMenu.bind(this),
+                        mainMenuCallbackData: CALLBACK_MAIN,
+                        controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                            `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                    });
+                    return;
+                }
                 await this.lightMenu.open(ctx, {
                     deviceId,
                     nodeId: nodeId > 0 ? nodeId : null,
@@ -979,6 +997,41 @@ export class TelegramBotService {
                     mainMenuCallbackData: CALLBACK_MAIN,
                     controllersCallbackData: (nextDeviceId, nextNodeId) =>
                         `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:camera:snapshot:(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const cameraId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "camera_snapshot",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} camera_id: ${cameraId}`,
+                );
+                await this.cameraMenu.snapshot(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    cameraId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                    buildPublicUrl: this.buildPublicUrl.bind(this),
                 });
             },
         );
@@ -2040,6 +2093,7 @@ export class TelegramBotService {
         if (normalized === "баки") return "tanks";
         if (normalized === "септик") return "septic";
         if (normalized === "полив") return "watering";
+        if (normalized === "камеры") return "cameras";
         return "";
     }
 
@@ -2136,6 +2190,19 @@ export class TelegramBotService {
             });
             return true;
         }
+        if (controller === "cameras") {
+            await this.cameraMenu.open(ctx, {
+                deviceId,
+                nodeId: effectiveNodeId,
+                user,
+                getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                replyMenu: this.replyMenu.bind(this),
+                mainMenuCallbackData: CALLBACK_MAIN,
+                controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                    `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+            });
+            return true;
+        }
         return false;
     }
 
@@ -2214,7 +2281,7 @@ export class TelegramBotService {
         {
             const match = value.match(
                 new RegExp(
-                    `^${CALLBACK_CONTROLLER_PREFIX}(\\d+):(\\d+):(sockets|lights|meteo|thermo|tanks|septic|watering)$`,
+                    `^${CALLBACK_CONTROLLER_PREFIX}(\\d+):(\\d+):(sockets|lights|meteo|thermo|tanks|septic|watering|cameras)$`,
                 ),
             );
             if (match) {
@@ -2225,6 +2292,24 @@ export class TelegramBotService {
                     Number(match[2]),
                     user,
                 );
+            }
+        }
+        {
+            const match = value.match(/^menu:camera:snapshot:(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.cameraMenu.snapshot(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    cameraId: Number(match[3]),
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                    buildPublicUrl: this.buildPublicUrl.bind(this),
+                });
+                return true;
             }
         }
         {
@@ -2724,6 +2809,9 @@ export class TelegramBotService {
         const hasWatering =
             Array.isArray(detail?.controllers?.watering) &&
             detail.controllers.watering.length > 0;
+        const hasCameras =
+            Array.isArray(detail?.controllers?.cameras) &&
+            detail.controllers.cameras.some((camera) => camera?.enabled);
         const hasSecurity = Boolean(detail?.controllers?.security?.enabled);
         const hasRing = Boolean(detail?.controllers?.ring?.enabled);
         const hasAvr = Boolean(detail?.controllers?.avr?.enabled);
@@ -2765,6 +2853,11 @@ export class TelegramBotService {
             controllerButtons.push({
                 label: "💧 Полив",
                 data: this.wateringMenu.controllerCallbackData(deviceId, nodeId),
+            });
+        if (hasCameras)
+            controllerButtons.push({
+                label: "📷 Камеры",
+                data: this.cameraMenu.controllerCallbackData(deviceId, nodeId),
             });
         if (hasSecurity)
             controllerButtons.push({
@@ -2907,6 +3000,9 @@ export class TelegramBotService {
         const watering = Array.isArray(controllers.watering)
             ? controllers.watering
             : [];
+        const cameras = Array.isArray(controllers.cameras)
+            ? controllers.cameras
+            : [];
         const leak = Array.isArray(controllers.leak) ? controllers.leak : [];
         const socketsSummary =
             !Array.isArray(controllers.sockets) &&
@@ -2949,6 +3045,12 @@ export class TelegramBotService {
             controllers.watering &&
             typeof controllers.watering === "object"
                 ? controllers.watering
+                : null;
+        const camerasSummary =
+            !Array.isArray(controllers.cameras) &&
+            controllers.cameras &&
+            typeof controllers.cameras === "object"
+                ? controllers.cameras
                 : null;
         const leakSummary =
             !Array.isArray(controllers.leak) &&
@@ -3026,6 +3128,16 @@ export class TelegramBotService {
                 visible:
                     watering.length > 0 ||
                     Number(wateringSummary?.enabled_count || 0) > 0,
+            },
+            {
+                title: "Камеры",
+                status:
+                    cameras.length > 0
+                        ? `${cameras.filter((x) => x?.enabled).length}/${cameras.length}`
+                        : `${Number(camerasSummary?.enabled_count || 0)}/${Number(camerasSummary?.count || 0)}`,
+                visible:
+                    cameras.some((x) => x?.enabled) ||
+                    Number(camerasSummary?.enabled_count || 0) > 0,
             },
             {
                 title: "Охрана",
@@ -3317,6 +3429,17 @@ export class TelegramBotService {
         scoped.device_id = Number(deviceId);
         scoped.node_id = nodeId ? Number(nodeId) : 0;
         return scoped;
+    }
+
+    buildPublicUrl(pathname = "") {
+        const base = String(this.settings?.public_base_url || "").trim();
+        const rel = String(pathname || "").trim();
+        if (!base || !rel) return "";
+        try {
+            return new URL(rel, base.endsWith("/") ? base : `${base}/`).toString();
+        } catch {
+            return "";
+        }
     }
 
     async refreshTelegramSummary(
