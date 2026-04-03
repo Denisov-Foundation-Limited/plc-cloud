@@ -258,6 +258,19 @@ proto.json
 
 - `username`
 - `password_hash`
+
+## Скриншоты
+
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/1.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/2.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/3.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/4.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/5.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/6.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/7.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/8.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/9.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/10.png" width="700" />
 - `plc_username`
 - `telegram_username`
 - `chat_id`
