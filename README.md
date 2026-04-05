@@ -258,19 +258,6 @@ proto.json
 
 - `username`
 - `password_hash`
-
-## Скриншоты
-
-<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/1.png" width="700" />
-<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/2.png" width="700" />
-<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/3.png" width="700" />
-<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/4.png" width="700" />
-<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/5.png" width="700" />
-<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/6.png" width="700" />
-<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/7.png" width="700" />
-<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/8.png" width="700" />
-<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/9.png" width="700" />
-<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/10.png" width="700" />
 - `plc_username`
 - `telegram_username`
 - `chat_id`
@@ -501,3 +488,16 @@ ACL приходит от PLC и интерпретируется в:
 4. добавить рендеринг во [public/js/ui.js](/Users/serg/plc-cloud/public/js/ui.js)
 5. добавить действия во [public/js/main.js](/Users/serg/plc-cloud/public/js/main.js)
 6. при необходимости добавить Telegram-меню в [src/bot/menu](/Users/serg/plc-cloud/src/bot/menu)
+
+## Скриншоты
+
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/1.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/2.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/3.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/4.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/5.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/6.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/7.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/8.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/9.png" width="700" />
+<img src="https://raw.githubusercontent.com/Denisov-Foundation-Limited/plc-cloud/develop/img/10.png" width="700" />

@@ -131,8 +131,8 @@ export class AppServer {
     async close() {
         if (this.offlineTimer) clearInterval(this.offlineTimer);
         if (this.devicePingTimer) clearInterval(this.devicePingTimer);
-        if (this.telegramBotService?.bot) {
-            this.telegramBotService.bot.stop();
+        if (this.telegramBotService?.shutdown) {
+            await this.telegramBotService.shutdown();
         }
     }
 

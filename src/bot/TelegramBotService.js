@@ -45,6 +45,8 @@ const CALLBACK_CONTROLLER_PREFIX = `${CALLBACK_PREFIX}:controller:`;
 const CALLBACK_TOGGLE_PREFIX = `${CALLBACK_PREFIX}:toggle:`;
 const CALLBACK_QUICK_PREFIX = `${CALLBACK_PREFIX}:quick:`;
 const STACK_SUMMARY_REFRESH_COOLDOWN_MS = 5000;
+const TELEGRAM_POLLING_STOP_WAIT_MS = 800;
+const TELEGRAM_POLLING_CONFLICT_RETRY_MS = 1500;
 
 function normalizePath(value, fallback = "/telegram/webhook") {
     const raw = String(value || fallback).trim() || fallback;
@@ -157,6 +159,27 @@ function menuSelectionIncludes(left, right) {
     return a.includes(b) || b.includes(a);
 }
 
+function menuSelectionEquals(left, right) {
+    const a = normalizeMenuSelection(left);
+    const b = normalizeMenuSelection(right);
+    return Boolean(a) && Boolean(b) && a === b;
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isPollingConflictError(err) {
+    const message = String(
+        err?.description ||
+            err?.message ||
+            err?.error?.description ||
+            err?.error?.message ||
+            "",
+    ).toLowerCase();
+    return err?.error_code === 409 || message.includes("other getupdates request");
+}
+
 export class TelegramBotService {
     constructor({ telegramConfigDb, usersDb, devicesDb, registry }) {
         this.telegramConfigDb = telegramConfigDb;
@@ -192,6 +215,8 @@ export class TelegramBotService {
             telegram_username: "",
             seen_at: "",
         };
+        this.lifecycleTask = Promise.resolve();
+        this.pollingTask = null;
     }
 
     setDeviceWs(deviceWs) {
@@ -525,6 +550,25 @@ export class TelegramBotService {
     }
 
     async applySettings(settings, { source = "update" } = {}) {
+        const run = async () => this.applySettingsNow_(settings, { source });
+        const next = this.lifecycleTask.then(run, run);
+        this.lifecycleTask = next.catch(() => {});
+        return next;
+    }
+
+    async shutdown() {
+        const run = async () => {
+            const previousBot = this.bot;
+            this.bot = null;
+            this.botInfo = null;
+            await this.stopBot_(previousBot, "shutdown");
+        };
+        const next = this.lifecycleTask.then(run, run);
+        this.lifecycleTask = next.catch(() => {});
+        return next;
+    }
+
+    async applySettingsNow_(settings, { source = "update" } = {}) {
         const previousBot = this.bot;
         const previousToken = this.settings.token;
 
@@ -537,18 +581,24 @@ export class TelegramBotService {
             secret_token: String(settings?.secret_token || "").trim(),
         };
 
-        if (
-            previousBot &&
-            (previousToken !== this.settings.token || !this.settings.token)
-        ) {
-            previousBot.stop();
-        }
+        const shouldRestart =
+            !previousBot ||
+            previousToken !== this.settings.token ||
+            !this.settings.token;
 
-        this.bot = null;
-        this.botInfo = null;
+        if (previousBot && shouldRestart) {
+            this.bot = null;
+            this.botInfo = null;
+            await this.stopBot_(previousBot, source);
+        }
 
         if (!this.settings.token) {
             logger.info("telegram bot disabled: token is not set");
+            return;
+        }
+
+        if (previousBot && !shouldRestart) {
+            logger.info("telegram bot settings updated without polling restart");
             return;
         }
 
@@ -577,19 +627,56 @@ export class TelegramBotService {
             await this.bot.api
                 .deleteWebhook({ drop_pending_updates: true })
                 .catch(() => {});
-            void this.bot.start({
-                allowed_updates: ["message", "callback_query"],
-                drop_pending_updates: true,
-                onStart: (botInfo) => {
-                    logger.info(
-                        `telegram bot polling started: @${botInfo.username || "unknown"}`,
-                    );
-                },
-            });
+            this.pollingTask = this.startPollingLoop_(this.bot);
         } catch (err) {
+            this.bot = null;
+            this.botInfo = null;
             logger.error(
                 `telegram bot ${source} failed: ${err?.message || "unknown_error"}`,
             );
+        }
+    }
+
+    async stopBot_(bot, source = "stop") {
+        if (!bot) return;
+        try {
+            bot.stop();
+        } catch (err) {
+            logger.warn(
+                `telegram bot stop failed: source: ${source} error: ${err?.message || "unknown_error"}`,
+            );
+        }
+        await sleep(TELEGRAM_POLLING_STOP_WAIT_MS);
+    }
+
+    async startPollingLoop_(bot) {
+        if (!bot) return;
+        while (this.bot === bot) {
+            try {
+                await bot.start({
+                    allowed_updates: ["message", "callback_query"],
+                    drop_pending_updates: true,
+                    onStart: (botInfo) => {
+                        logger.info(
+                            `telegram bot polling started: @${botInfo.username || "unknown"}`,
+                        );
+                    },
+                });
+                return;
+            } catch (err) {
+                if (this.bot !== bot) return;
+                if (isPollingConflictError(err)) {
+                    logger.warn(
+                        "telegram polling conflict: previous getUpdates session still active, retrying",
+                    );
+                    await sleep(TELEGRAM_POLLING_CONFLICT_RETRY_MS);
+                    continue;
+                }
+                logger.error(
+                    `telegram polling failed: ${err?.message || "unknown_error"}`,
+                );
+                return;
+            }
         }
     }
 
@@ -2578,7 +2665,7 @@ export class TelegramBotService {
             .find(
                 (button) =>
                     button.label === String(text || "").trim() ||
-                    menuSelectionIncludes(text, button.label),
+                    menuSelectionEquals(text, button.label),
             );
         if (directAction?.data) {
             return await this.dispatchReplyAction(ctx, directAction.data, user);

@@ -35,10 +35,11 @@ function panelDivider() {
     return "━━━━━━━━━━━━━━━━━";
 }
 
-function buttonLabel(name, state, fallback) {
+function buttonLabel(name, state, fallback, id = 0) {
     const raw = String(name || fallback).trim();
-    const short = raw.length > 15 ? `${raw.slice(0, 15)}…` : raw;
-    return `${state ? "🟢" : "⚪"} ${short}`;
+    const prefix = Number.isFinite(Number(id)) && Number(id) > 0 ? `#${Number(id)} ` : "";
+    const short = raw.length > 11 ? `${raw.slice(0, 11)}…` : raw;
+    return `${state ? "🟢" : "⚪"} ${prefix}${short}`;
 }
 
 async function safeAnswerCallbackQuery(ctx, options = {}) {
@@ -350,7 +351,7 @@ export class TgSocketMenu {
             if (!Number.isFinite(id)) continue;
             const state = Boolean(item?.state);
             buttons.push({
-                label: buttonLabel(item?.name, state, `Розетка ${id}`),
+                label: buttonLabel(item?.name, state, `Розетка ${id}`, id),
                 data: this.toggleCallbackData(deviceId, nodeId, id),
             });
         }
