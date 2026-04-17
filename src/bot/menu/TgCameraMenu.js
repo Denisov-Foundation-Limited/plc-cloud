@@ -82,7 +82,12 @@ export class TgCameraMenu {
             await replyMenu(
                 ctx,
                 "Устройство недоступно.",
-                new InlineKeyboard().text("🏘 К началу", mainMenuCallbackData),
+                this.buildBackKeyboard(
+                    Number(deviceId),
+                    Number(nodeId || 0),
+                    controllersCallbackData,
+                    mainMenuCallbackData,
+                ),
             );
             return;
         }
@@ -146,34 +151,42 @@ export class TgCameraMenu {
             return;
         }
 
-        const result = this.deviceWs?.sendCmd(
-            Number(deviceId),
-            "cameras",
-            "snapshot",
-            { id: Number(cameraId) },
-            {
-                uid: user?.username || user?.plc_username || "",
-                username: user?.username || "",
-                plc_username: user?.plc_username || "",
-                source: "telegram",
-                session_id: `tg:${String(user?.chat_id || "")}`,
-            },
-            "local",
-            undefined,
-        );
-        if (!result?.ok) {
+        let pendingDetail = this.markCameraBusy_(detail, cameraId);
+        if (camera?.busy) {
             await this.answerCallback_(ctx, {
-                text: "Команда не отправлена",
-                show_alert: true,
+                text: `📷 ${camera.name || `Камера #${cameraId}`}: уже получаем снимок`,
             });
-            return;
+            this.deviceWs?.sendGet(Number(deviceId), ["controllers"], "local");
+        } else {
+            const result = this.deviceWs?.sendCmd(
+                Number(deviceId),
+                "cameras",
+                "snapshot",
+                { id: Number(cameraId) },
+                {
+                    uid: user?.username || user?.plc_username || "",
+                    username: user?.username || "",
+                    plc_username: user?.plc_username || "",
+                    source: "telegram",
+                    session_id: `tg:${String(user?.chat_id || "")}`,
+                },
+                "local",
+                undefined,
+            );
+            if (!result?.ok) {
+                await this.answerCallback_(ctx, {
+                    text: "Команда не отправлена",
+                    show_alert: true,
+                });
+                return;
+            }
+
+            this.deviceWs?.sendGet(Number(deviceId), ["controllers"], "local");
+            await this.answerCallback_(ctx, {
+                text: `📷 ${camera.name || `Камера #${cameraId}`}`,
+            });
         }
 
-        this.deviceWs?.sendGet(Number(deviceId), ["controllers"], "local");
-        await this.answerCallback_(ctx, {
-            text: `📷 ${camera.name || `Камера #${cameraId}`}`,
-        });
-        const pendingDetail = this.markCameraBusy_(detail, cameraId);
         await this.replyCameraMenu_(ctx, pendingDetail, {
             deviceId,
             nodeId,
@@ -291,20 +304,15 @@ export class TgCameraMenu {
                     Number(detail?.device_id),
                     Number(detail?.node_id || 0),
                 ),
-            )
-            .row()
-            .text("🏘 К началу", mainMenuCallbackData);
+            );
         return keyboard;
     }
 
     buildBackKeyboard(deviceId, nodeId, controllersCallbackData, mainMenuCallbackData) {
-        return new InlineKeyboard()
-            .text(
-                "🧩 Контроллеры",
-                controllersCallbackData(deviceId, nodeId || 0),
-            )
-            .row()
-            .text("🏘 К началу", mainMenuCallbackData);
+        return new InlineKeyboard().text(
+            "🧩 Контроллеры",
+            controllersCallbackData(deviceId, nodeId || 0),
+        );
     }
 
     async replyCameraMenu_(

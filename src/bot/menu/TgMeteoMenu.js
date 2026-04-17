@@ -99,7 +99,12 @@ export class TgMeteoMenu {
             await replyMenu(
                 ctx,
                 "Устройство недоступно.",
-                new InlineKeyboard().text("🏘 К началу", mainMenuCallbackData),
+                this.buildBackKeyboard(
+                    Number(deviceId),
+                    Number(nodeId || 0),
+                    controllersCallbackData,
+                    mainMenuCallbackData,
+                ),
             );
             return;
         }
@@ -180,9 +185,7 @@ export class TgMeteoMenu {
                     Number(detail?.device_id),
                     Number(detail?.node_id || 0),
                 ),
-            )
-            .row();
-        keyboard.text("🏘 К началу", mainMenuCallbackData);
+            );
         return keyboard;
     }
 
@@ -192,13 +195,10 @@ export class TgMeteoMenu {
         controllersCallbackData,
         mainMenuCallbackData,
     ) {
-        return new InlineKeyboard()
-            .text(
-                "🧩 Контроллеры",
-                controllersCallbackData(deviceId, nodeId || 0),
-            )
-            .row()
-            .text("🏘 К началу", mainMenuCallbackData);
+        return new InlineKeyboard().text(
+            "🧩 Контроллеры",
+            controllersCallbackData(deviceId, nodeId || 0),
+        );
     }
 
     controllerCallbackData(deviceId, nodeId = 0) {

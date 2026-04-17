@@ -334,6 +334,10 @@ export class WebWsServer {
                 type: "command_error",
                 error: result.error || "command_failed",
                 device_id: Number(pendingCmd.device_id),
+                controller: pendingCmd.controller || undefined,
+                action: pendingCmd.action || undefined,
+                unit: pendingCmd.unit || "local",
+                node_id: pendingCmd.node_id || undefined,
             });
             return;
         }

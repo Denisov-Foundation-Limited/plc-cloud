@@ -2442,23 +2442,41 @@ function handleWsMessage(msg) {
     }
 
     if (msg.type === "command_error") {
+        const errorText = String(msg.error || "").trim();
+        const errorLower = errorText.toLowerCase();
+        const isCameraBusyWait =
+            String(msg.controller || "") === "cameras" &&
+            String(msg.action || "") === "snapshot" &&
+            errorLower.includes("camera busy");
+        if (isCameraBusyWait) {
+            ui.setContentLoading(false);
+            ui.setStatus("Снимок уже загружается, ждём обновление", true);
+            ui.setCamerasNotice("Снимок уже загружается другим запросом, ждём обновление...");
+            [500, 1500, 3000, 5000].forEach((delayMs) => {
+                setTimeout(() => {
+                    if (!state.currentDevice) return;
+                    requestDeviceSnapshot({ loading: false });
+                }, delayMs);
+            });
+            return;
+        }
         ui.setContentLoading(false);
         clearStackPendingRetry();
         clearSocketPendingByScope();
         clearLightPendingByScope();
-        ui.setStatus(`Ошибка запроса: ${msg.error}`, false);
-        ui.setDeviceNotice(`Ошибка запроса: ${msg.error}`);
-        ui.setSocketsNotice(`Ошибка команды: ${msg.error}`);
-        ui.setLightsNotice(`Ошибка команды: ${msg.error}`);
-        ui.setTanksNotice(`Ошибка команды: ${msg.error}`);
-        ui.setSecurityNotice(`Ошибка команды: ${msg.error}`);
-        ui.setThermoNotice(`Ошибка команды: ${msg.error}`);
-        ui.setSepticNotice(`Ошибка команды: ${msg.error}`);
-        ui.setWateringNotice(`Ошибка команды: ${msg.error}`);
-        ui.setRingNotice(`Ошибка команды: ${msg.error}`);
-        ui.setAvrNotice(`Ошибка команды: ${msg.error}`);
-        ui.setLeakNotice(`Ошибка команды: ${msg.error}`);
-        ui.setCamerasNotice(`Ошибка команды: ${msg.error}`);
+        ui.setStatus(`Ошибка запроса: ${errorText}`, false);
+        ui.setDeviceNotice(`Ошибка запроса: ${errorText}`);
+        ui.setSocketsNotice(`Ошибка команды: ${errorText}`);
+        ui.setLightsNotice(`Ошибка команды: ${errorText}`);
+        ui.setTanksNotice(`Ошибка команды: ${errorText}`);
+        ui.setSecurityNotice(`Ошибка команды: ${errorText}`);
+        ui.setThermoNotice(`Ошибка команды: ${errorText}`);
+        ui.setSepticNotice(`Ошибка команды: ${errorText}`);
+        ui.setWateringNotice(`Ошибка команды: ${errorText}`);
+        ui.setRingNotice(`Ошибка команды: ${errorText}`);
+        ui.setAvrNotice(`Ошибка команды: ${errorText}`);
+        ui.setLeakNotice(`Ошибка команды: ${errorText}`);
+        ui.setCamerasNotice(`Ошибка команды: ${errorText}`);
     }
 }
 

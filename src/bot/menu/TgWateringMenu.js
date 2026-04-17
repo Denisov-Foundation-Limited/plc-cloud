@@ -190,7 +190,12 @@ export class TgWateringMenu {
             await replyMenu(
                 ctx,
                 "Устройство недоступно.",
-                new InlineKeyboard().text("🏘 К началу", mainMenuCallbackData),
+                this.buildBackKeyboard(
+                    Number(deviceId),
+                    Number(nodeId || 0),
+                    controllersCallbackData,
+                    mainMenuCallbackData,
+                ),
             );
             return;
         }
@@ -253,7 +258,12 @@ export class TgWateringMenu {
             await replyMenu(
                 ctx,
                 "Устройство недоступно.",
-                new InlineKeyboard().text("🏘 К началу", mainMenuCallbackData),
+                this.buildBackKeyboard(
+                    Number(deviceId),
+                    Number(nodeId || 0),
+                    controllersCallbackData,
+                    mainMenuCallbackData,
+                ),
             );
             return;
         }
@@ -587,7 +597,12 @@ export class TgWateringMenu {
             await replyMenu(
                 ctx,
                 "Устройство недоступно.",
-                new InlineKeyboard().text("🏘 К началу", mainMenuCallbackData),
+                this.buildBackKeyboard(
+                    Number(deviceId),
+                    Number(nodeId || 0),
+                    controllersCallbackData,
+                    mainMenuCallbackData,
+                ),
             );
             return;
         }
@@ -814,10 +829,7 @@ export class TgWateringMenu {
             if (right) keyboard.text(right.label, right.data);
             keyboard.row();
         }
-        keyboard
-            .text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId))
-            .row();
-        keyboard.text("🏘 К началу", mainMenuCallbackData);
+        keyboard.text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId));
         return keyboard;
     }
 
@@ -859,10 +871,7 @@ export class TgWateringMenu {
                 this.controllerCallbackData(deviceId, nodeId),
             )
             .row();
-        keyboard
-            .text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId))
-            .row();
-        keyboard.text("🏘 К началу", mainMenuCallbackData);
+        keyboard.text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId));
         return keyboard;
     }
 
@@ -929,10 +938,7 @@ export class TgWateringMenu {
                 this.itemCallbackData(deviceId, nodeId, itemId),
             )
             .row();
-        keyboard
-            .text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId))
-            .row();
-        keyboard.text("🏘 К началу", mainMenuCallbackData);
+        keyboard.text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId));
         return keyboard;
     }
 
@@ -942,13 +948,10 @@ export class TgWateringMenu {
         controllersCallbackData,
         mainMenuCallbackData,
     ) {
-        return new InlineKeyboard()
-            .text(
-                "🧩 Контроллеры",
-                controllersCallbackData(deviceId, nodeId || 0),
-            )
-            .row()
-            .text("🏘 К началу", mainMenuCallbackData);
+        return new InlineKeyboard().text(
+            "🧩 Контроллеры",
+            controllersCallbackData(deviceId, nodeId || 0),
+        );
     }
 
     controllerCallbackData(deviceId, nodeId = 0) {

@@ -1969,13 +1969,18 @@ export class TelegramBotService {
         } else {
             this.setReplyActionMap(ctx, null);
         }
+        const forceNewMessage = Boolean(
+            extraOptions?.force_new_message || extraOptions?.forceNewMessage,
+        );
         const options = { parse_mode: "HTML", ...extraOptions };
+        delete options.force_new_message;
+        delete options.forceNewMessage;
         if (keyboard) options.reply_markup = keyboard;
         const callbackMessage = ctx?.callbackQuery?.message || null;
         const canEdit =
             Boolean(callbackMessage?.chat?.id) &&
             Number.isFinite(Number(callbackMessage?.message_id));
-        if (canEdit && !replyActionMap) {
+        if (canEdit && !replyActionMap && !forceNewMessage) {
             try {
                 await ctx.api.editMessageText(
                     callbackMessage.chat.id,
