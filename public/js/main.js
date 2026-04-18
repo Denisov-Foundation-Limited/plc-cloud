@@ -1413,8 +1413,8 @@ ui.deviceThermoGrid?.addEventListener("click", (e) => {
     } else if (action === "target-up" || action === "target-down") {
         const currentTarget = Number(tile.dataset.target);
         if (!Number.isFinite(currentTarget)) return;
-        const delta = action === "target-up" ? 0.5 : -0.5;
-        const nextTarget = Math.round((currentTarget + delta) * 10) / 10;
+        const delta = action === "target-up" ? 1 : -1;
+        const nextTarget = Math.round(currentTarget + delta);
         markTilePending(tile);
         sendCmd("thermo", "target", { id, target_c: nextTarget });
     } else {
@@ -1696,10 +1696,49 @@ function selectDevice(device) {
     ui.setCamerasNotice("");
     renderTargetPicker(device);
     subscribeDevice(device.device_id);
+    void bootstrapDeviceDetail(device);
     requestDeviceSnapshot();
     scheduleStackPendingRetry(state.currentDeviceData);
     startDevicePolling();
     ui.show("device");
+}
+
+async function bootstrapDeviceDetail(device) {
+    const deviceId = Number(device?.device_id || 0);
+    if (!deviceId) return;
+    try {
+        const data = await api(`/api/device/${deviceId}`);
+        if (
+            !state.currentDevice ||
+            Number(state.currentDevice.device_id) !== deviceId ||
+            !data?.device
+        ) {
+            return;
+        }
+        state.currentDeviceData = mergeDeviceData(state.currentDeviceData, data.device);
+        renderTargetPicker(state.currentDeviceData);
+        const effectiveDetail = applyPendingDeviceOverlay(state.currentDeviceData);
+        const scopedDetail = resolveScopedDetail(effectiveDetail);
+        ui.setContentLoading(false);
+        ui.renderDevice(scopedDetail);
+        ui.renderCameras(effectiveDetail);
+        ui.renderSockets(scopedDetail);
+        syncSocketPendingUi();
+        ui.renderLights(scopedDetail);
+        syncLightPendingUi();
+        ui.renderTanks(scopedDetail);
+        ui.renderSecurity(scopedDetail);
+        ui.renderMeteo(scopedDetail);
+        ui.renderThermo(scopedDetail);
+        ui.renderSeptic(scopedDetail);
+        ui.renderWatering(scopedDetail);
+        ui.renderRing(scopedDetail);
+        ui.renderAvr(scopedDetail);
+        ui.renderLeak(scopedDetail);
+        ui.renderNetwork(scopedDetail);
+    } catch (err) {
+        // Keep websocket-driven flow if bootstrap detail is temporarily unavailable.
+    }
 }
 
 async function requestDevices(objectName) {
@@ -2219,6 +2258,8 @@ function resolveScopedDetail(detail) {
         return {
             ...detail,
             name: node?.name || detail.name,
+            scope_unit: "stack",
+            scope_node_id: Number(state.currentNodeId) || 0,
             online:
                 typeof node?.online === "boolean"
                     ? Boolean(node.online)
@@ -2230,6 +2271,8 @@ function resolveScopedDetail(detail) {
     return {
         ...detail,
         name: node?.name || scoped.name || detail.name,
+        scope_unit: "stack",
+        scope_node_id: Number(state.currentNodeId) || 0,
         online:
             typeof node?.online === "boolean"
                 ? Boolean(node.online)
@@ -2238,6 +2281,12 @@ function resolveScopedDetail(detail) {
                   : detail.online,
         system: scoped.system || {},
         controllers: scoped.controllers || {},
+        summary:
+            scoped.summary && typeof scoped.summary === "object"
+                ? scoped.summary
+                : detail.summary && typeof detail.summary === "object"
+                  ? detail.summary
+                  : null,
         last_event: scoped.last_event ?? detail.last_event,
     };
 }

@@ -96,13 +96,13 @@ export class TgSepticMenu {
             );
             return;
         }
-        const list = Array.isArray(detail?.controllers?.septic)
-            ? detail.controllers.septic
-            : [];
+        const list = this.list(detail);
         if (!list.length) {
             await replyMenu(
                 ctx,
-                "Нет доступного септика.",
+                detail?._controller_loading === "septic"
+                    ? "Данные септика со слейва ещё загружаются."
+                    : "Нет доступного септика.",
                 this.buildBackKeyboard(
                     deviceId,
                     nodeId,
@@ -264,7 +264,7 @@ export class TgSepticMenu {
         }
         this.deviceWs?.sendGet(
             Number(deviceId),
-            ["controllers"],
+            nodeId ? ["system", "controllers"] : ["controllers"],
             nodeId ? "stack" : "local",
             nodeId || undefined,
         );
@@ -283,24 +283,50 @@ export class TgSepticMenu {
     }
 
     findItem(detail, itemId) {
-        const list = Array.isArray(detail?.controllers?.septic)
-            ? detail.controllers.septic
-            : [];
+        const list = this.list(detail);
         return list.find((item) => Number(item?.id) === Number(itemId)) || null;
     }
 
+    list(detail) {
+        if (Array.isArray(detail?.controllers?.septic)) {
+            return detail.controllers.septic;
+        }
+        const septic =
+            detail?.controllers?.septic &&
+            typeof detail.controllers.septic === "object"
+                ? detail.controllers.septic
+                : null;
+        if (!septic) return [];
+        const enabledCount = Number(septic?.enabled_count ?? septic?.enabled ?? 0);
+        if (!(enabledCount > 0 || septic?.warning || septic?.alarm)) {
+            return [];
+        }
+        return [
+            {
+                id: Number(septic?.id || 1),
+                enabled: true,
+                group_id: Number(septic?.group_id || 0),
+                name: septic?.name || "Септик",
+                monitoring_on: Boolean(
+                    septic?.monitoring_on ?? septic?.monitor_on ?? septic?.monitor,
+                ),
+                warning: Boolean(septic?.warning),
+                alarm: Boolean(septic?.alarm),
+            },
+        ];
+    }
+
     patchItem(detail, itemId, updater) {
+        const list = this.list(detail);
         return {
             ...detail,
             controllers: {
                 ...(detail?.controllers || {}),
-                septic: Array.isArray(detail?.controllers?.septic)
-                    ? detail.controllers.septic.map((item) =>
-                          Number(item?.id) === Number(itemId)
-                              ? updater({ ...item })
-                              : item,
-                      )
-                    : [],
+                septic: list.map((item) =>
+                    Number(item?.id) === Number(itemId)
+                        ? updater({ ...item })
+                        : item,
+                ),
             },
         };
     }
@@ -342,9 +368,7 @@ export class TgSepticMenu {
 
     buildKeyboard(detail, controllersCallbackData, mainMenuCallbackData) {
         const keyboard = new InlineKeyboard();
-        const list = Array.isArray(detail?.controllers?.septic)
-            ? detail.controllers.septic
-            : [];
+        const list = this.list(detail);
         const deviceId = Number(detail?.device_id);
         const nodeId = Number(detail?.node_id || 0);
         const buttons = [];
@@ -364,7 +388,7 @@ export class TgSepticMenu {
             keyboard.row();
         }
         keyboard
-            .text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId));
+            .text("◀️ Назад", controllersCallbackData(deviceId, nodeId));
         return keyboard;
     }
 
@@ -393,7 +417,7 @@ export class TgSepticMenu {
             )
             .row();
         keyboard
-            .text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId));
+            .text("◀️ Назад", controllersCallbackData(deviceId, nodeId));
         return keyboard;
     }
 
@@ -404,7 +428,7 @@ export class TgSepticMenu {
         mainMenuCallbackData,
     ) {
         return new InlineKeyboard().text(
-            "🧩 Контроллеры",
+            "◀️ Назад",
             controllersCallbackData(deviceId, nodeId || 0),
         );
     }

@@ -14,6 +14,8 @@ export class DeviceRegistry {
         this.onlineTtlMs = onlineTtlMs;
         this.sessions = new Map();
         this.socketToDevice = new Map();
+        this.meteoHistoryMaxPoints = 360;
+        this.meteoHistoryMinSampleMs = 60000;
     }
 
     normalizeDeviceId(deviceId) {
@@ -43,6 +45,10 @@ export class DeviceRegistry {
             lastSeenMs: now,
             hello: hello || null,
             state: {},
+            meteoHistory: {
+                local: {},
+                stack: {},
+            },
         });
         this.socketToDevice.set(ws, normalizedId);
     }
@@ -163,6 +169,10 @@ export class DeviceRegistry {
                 ...session.state,
                 stack_units: stackUnits,
             };
+            this.captureMeteoHistory_(session, mergedControllers, {
+                unit: "stack",
+                nodeId,
+            });
             return;
         }
         const normalizedPatch = this.normalizeStatePatch_(
@@ -179,6 +189,30 @@ export class DeviceRegistry {
                 normalizedPatch.controllers,
             ),
         };
+        this.captureMeteoHistory_(session, session.state.controllers, {
+            unit: "local",
+            nodeId: null,
+        });
+    }
+
+    getMeteoHistory(deviceId, sensorId, scope = {}) {
+        const session = this.sessions.get(this.normalizeDeviceId(deviceId));
+        if (!session) return [];
+        const normalizedSensorId = Number(sensorId);
+        if (!Number.isFinite(normalizedSensorId) || normalizedSensorId <= 0) {
+            return [];
+        }
+        const nodeId = Number(scope?.nodeId);
+        if (Number.isFinite(nodeId) && nodeId > 0) {
+            const bucket =
+                session.meteoHistory?.stack?.[String(nodeId)]?.[
+                    String(normalizedSensorId)
+                ];
+            return Array.isArray(bucket) ? [...bucket] : [];
+        }
+        const bucket =
+            session.meteoHistory?.local?.[String(normalizedSensorId)];
+        return Array.isArray(bucket) ? [...bucket] : [];
     }
 
     normalizeStatePatch_(patch, prevControllers, scope = null, prevStack = null) {
@@ -500,5 +534,60 @@ export class DeviceRegistry {
 
     listSessions() {
         return [...this.sessions.values()];
+    }
+
+    captureMeteoHistory_(session, controllers, scope = {}) {
+        const list = Array.isArray(controllers?.meteo) ? controllers.meteo : [];
+        if (!list.length) return;
+        if (!session.meteoHistory || typeof session.meteoHistory !== "object") {
+            session.meteoHistory = { local: {}, stack: {} };
+        }
+        const unit = scope?.unit === "stack" ? "stack" : "local";
+        const nodeId = Number(scope?.nodeId);
+        let store = session.meteoHistory.local;
+        if (unit === "stack" && Number.isFinite(nodeId) && nodeId > 0) {
+            if (!session.meteoHistory.stack[String(nodeId)]) {
+                session.meteoHistory.stack[String(nodeId)] = {};
+            }
+            store = session.meteoHistory.stack[String(nodeId)];
+        }
+
+        const now = Date.now();
+        for (const sensor of list) {
+            const sensorId = Number(sensor?.id);
+            if (!Number.isFinite(sensorId) || sensorId <= 0) continue;
+            const temp = Number(
+                sensor?.temperature_c ?? sensor?.temp_c ?? sensor?.temperature,
+            );
+            const humidity = Number(
+                sensor?.humidity ?? sensor?.humidity_pct ?? sensor?.hum,
+            );
+            const hasTemp = Number.isFinite(temp);
+            const hasHumidity = Number.isFinite(humidity);
+            if (!hasTemp && !hasHumidity) continue;
+
+            const key = String(sensorId);
+            const series = Array.isArray(store[key]) ? store[key] : [];
+            const nextPoint = {
+                ts: now,
+                ...(hasTemp ? { temp_c: temp } : {}),
+                ...(hasHumidity ? { humidity } : {}),
+                ok: sensor?.ok !== false,
+                enabled: sensor?.enabled !== false,
+            };
+            const last = series.length ? series[series.length - 1] : null;
+            const shouldReplace =
+                last &&
+                (now - Number(last.ts || 0)) < this.meteoHistoryMinSampleMs;
+            if (shouldReplace) {
+                series[series.length - 1] = nextPoint;
+            } else {
+                series.push(nextPoint);
+                if (series.length > this.meteoHistoryMaxPoints) {
+                    series.splice(0, series.length - this.meteoHistoryMaxPoints);
+                }
+            }
+            store[key] = series;
+        }
     }
 }

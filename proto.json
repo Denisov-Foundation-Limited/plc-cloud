@@ -434,7 +434,7 @@
                 "action": "mode",
                 "args": { "id": "u8", "mode": "off|heat_only|cool_only|auto" }
             },
-            { "action": "target", "args": { "id": "u8", "target_c": "float" } }
+            { "action": "target", "args": { "id": "u8", "target_c": "i16" } }
         ],
         "tanks": [
             { "action": "power", "args": { "id": "u8", "state": "on|off" } }

@@ -233,115 +233,184 @@ function objectIconSvg(icon) {
   `;
 }
 
-function summarizeControllers(controllers = {}) {
-    const sockets = asArray(controllers.sockets);
-    const lights = asArray(controllers.lights);
-    const meteo = asArray(controllers.meteo);
-    const cameras = asArray(controllers.cameras);
-    const thermo = asArray(controllers.thermo);
-    const tanks = asArray(controllers.tanks);
-    const septic = asArray(controllers.septic);
-    const watering = asArray(controllers.watering);
-    const leak = asArray(controllers.leak);
+function summarizeControllers(controllers = {}, summary = null, options = {}) {
+    const preferKeyPresence = Boolean(options?.preferKeyPresence);
+    const summaryObj = (value) =>
+        !Array.isArray(value) && value && typeof value === "object" ? value : null;
+    const hasControllerData = (items, summaryValue, primary = "enabled_count", alt = "enabled") =>
+        items.length > 0 ||
+        countOf(summaryValue, primary, alt) > 0 ||
+        (preferKeyPresence && Boolean(summaryValue));
+    const rootSummary =
+        summary && typeof summary === "object" ? summary : null;
+    const effectiveControllers = {
+        ...(rootSummary || {}),
+        ...(controllers && typeof controllers === "object" ? controllers : {}),
+    };
+    const sockets = asArray(effectiveControllers.sockets);
+    const lights = asArray(effectiveControllers.lights);
+    const meteo = asArray(effectiveControllers.meteo);
+    const cameras = asArray(effectiveControllers.cameras);
+    const thermo = asArray(effectiveControllers.thermo);
+    const tanks = asArray(effectiveControllers.tanks);
+    const septic = asArray(effectiveControllers.septic);
+    const watering = asArray(effectiveControllers.watering);
+    const leak = asArray(effectiveControllers.leak);
+    const countOf = (obj, primary, alt) => {
+        const raw = obj?.[primary] ?? obj?.[alt];
+        const num = Number(raw);
+        return Number.isFinite(num) ? num : 0;
+    };
+    const socketsSummary = summaryObj(effectiveControllers.sockets);
+    const lightsSummary = summaryObj(effectiveControllers.lights);
+    const meteoSummary = summaryObj(effectiveControllers.meteo);
+    const camerasSummary = summaryObj(effectiveControllers.cameras);
+    const thermoSummary = summaryObj(effectiveControllers.thermo);
+    const tanksSummary = summaryObj(effectiveControllers.tanks);
+    const septicSummary = summaryObj(effectiveControllers.septic);
+    const wateringSummary = summaryObj(effectiveControllers.watering);
+    const leakSummary = summaryObj(effectiveControllers.leak);
 
     return [
         {
             key: "sockets",
             title: "Розетки",
-            status: `${sockets.filter((x) => x.state).length}/${sockets.length}`,
-            online: sockets.some((x) => x.enabled),
-            visible: sockets.length > 0,
+            status: sockets.length > 0
+                ? `${sockets.filter((x) => x.state).length}/${sockets.length}`
+                : `${countOf(socketsSummary, "on_count", "on")}/${countOf(socketsSummary, "enabled_count", "enabled")}`,
+            online: hasControllerData(sockets, socketsSummary),
+            visible: hasControllerData(sockets, socketsSummary),
         },
         {
             key: "lights",
             title: "Освещение",
-            status: `${lights.filter((x) => x.state).length}/${lights.length}`,
-            online: lights.some((x) => x.enabled),
-            visible: lights.length > 0,
+            status: lights.length > 0
+                ? `${lights.filter((x) => x.state).length}/${lights.length}`
+                : `${countOf(lightsSummary, "on_count", "on")}/${countOf(lightsSummary, "enabled_count", "enabled")}`,
+            online: hasControllerData(lights, lightsSummary),
+            visible: hasControllerData(lights, lightsSummary),
         },
         {
             key: "meteo",
             title: "Метео",
-            status: `${meteo.filter((x) => x.ok).length}/${meteo.length}`,
-            online: meteo.some((x) => x.enabled),
-            visible: meteo.length > 0,
+            status: meteo.length > 0
+                ? `${meteo.filter((x) => x.ok).length}/${meteo.length}`
+                : `${countOf(meteoSummary, "ok_count", "ok")}/${countOf(meteoSummary, "enabled_count", "enabled")}`,
+            online: hasControllerData(meteo, meteoSummary),
+            visible: hasControllerData(meteo, meteoSummary),
         },
         {
             key: "cameras",
             title: "Камеры",
-            status: `${cameras.filter((x) => x.enabled).length}/${cameras.length}`,
-            online: cameras.some((x) => x.enabled),
-            visible: cameras.length > 0,
+            status: cameras.length > 0
+                ? `${cameras.filter((x) => x.enabled).length}/${cameras.length}`
+                : `${countOf(camerasSummary, "enabled_count", "enabled")}/${countOf(camerasSummary, "count", "total")}`,
+            online: hasControllerData(cameras, camerasSummary),
+            visible: hasControllerData(cameras, camerasSummary),
         },
         {
             key: "thermo",
             title: "Термостаты",
-            status: `${thermo.filter((x) => x.heat_on || x.cool_on).length}/${thermo.length}`,
-            online: thermo.some((x) => x.enabled),
-            visible: thermo.length > 0,
+            status: thermo.length > 0
+                ? `${thermo.filter((x) => x.heat_on || x.cool_on).length}/${thermo.length}`
+                : `${countOf(thermoSummary, "active_count", "active")}/${countOf(thermoSummary, "enabled_count", "enabled")}`,
+            online: hasControllerData(thermo, thermoSummary),
+            visible: hasControllerData(thermo, thermoSummary),
         },
         {
             key: "tanks",
             title: "Баки",
-            status: `${tanks.filter((x) => x.pump_on || x.alarm_on).length}/${tanks.length}`,
-            online: tanks.some((x) => x.enabled),
-            visible: tanks.length > 0,
+            status: tanks.length > 0
+                ? `${tanks.filter((x) => x.pump_on || x.alarm_on).length}/${tanks.length}`
+                : `${countOf(tanksSummary, "alert_count", "alert")}/${countOf(tanksSummary, "enabled_count", "enabled")}`,
+            online: hasControllerData(tanks, tanksSummary),
+            visible: hasControllerData(tanks, tanksSummary),
         },
         {
             key: "septic",
             title: "Септик",
-            status: `${septic.filter((x) => x.warning || x.alarm).length}/${septic.length}`,
-            online: septic.some((x) => x.enabled),
-            visible: septic.length > 0,
+            status: septic.length > 0
+                ? `${septic.filter((x) => x.warning || x.alarm).length}/${septic.length}`
+                : `${countOf(septicSummary, "alert_count", "alert")}/${countOf(septicSummary, "enabled_count", "enabled")}`,
+            online: hasControllerData(septic, septicSummary),
+            visible: hasControllerData(septic, septicSummary),
         },
         {
             key: "watering",
             title: "Полив",
-            status: `${watering.filter((x) => x.active).length}/${watering.length}`,
-            online: watering.some((x) => x.enabled),
-            visible: watering.length > 0,
+            status: watering.length > 0
+                ? `${watering.filter((x) => x.active).length}/${watering.length}`
+                : `${countOf(wateringSummary, "active_count", "active")}/${countOf(wateringSummary, "enabled_count", "enabled")}`,
+            online: hasControllerData(watering, wateringSummary),
+            visible: hasControllerData(watering, wateringSummary),
         },
         {
             key: "security",
             title: "Охрана",
-            status: controllers.security
-                ? controllers.security.alarm
+            status: effectiveControllers.security
+                ? effectiveControllers.security.alarm
                     ? "Тревога"
-                    : controllers.security.armed
+                    : effectiveControllers.security.armed
                       ? "На охране"
                       : "Снято"
                 : "-",
-            online: Boolean(controllers.security?.enabled),
-            visible: Boolean(controllers.security?.enabled),
+            online: Boolean(effectiveControllers.security?.enabled) || (preferKeyPresence && Boolean(effectiveControllers.security)),
+            visible: Boolean(effectiveControllers.security?.enabled) || (preferKeyPresence && Boolean(effectiveControllers.security)),
         },
         {
             key: "ring",
             title: "Звонок",
-            status: controllers.ring
-                ? controllers.ring.relay_on
+            status: effectiveControllers.ring
+                ? effectiveControllers.ring.relay_on
                     ? "Вкл"
                     : "Выкл"
                 : "-",
-            online: Boolean(controllers.ring?.enabled),
-            visible: Boolean(controllers.ring?.enabled),
+            online: Boolean(effectiveControllers.ring?.enabled) || (preferKeyPresence && Boolean(effectiveControllers.ring)),
+            visible: Boolean(effectiveControllers.ring?.enabled) || (preferKeyPresence && Boolean(effectiveControllers.ring)),
         },
         {
             key: "avr",
             title: "АВР",
-            status: controllers.avr
-                ? `${controllers.avr.active_source || "-"}${controllers.avr.fault && controllers.avr.fault !== "none" ? ` / ${controllers.avr.fault}` : ""}`
+            status: effectiveControllers.avr
+                ? `${effectiveControllers.avr.active_source || "-"}${effectiveControllers.avr.fault && effectiveControllers.avr.fault !== "none" ? ` / ${effectiveControllers.avr.fault}` : ""}`
                 : "-",
-            online: Boolean(controllers.avr?.enabled),
-            visible: Boolean(controllers.avr?.enabled),
+            online: Boolean(effectiveControllers.avr?.enabled) || (preferKeyPresence && Boolean(effectiveControllers.avr)),
+            visible: Boolean(effectiveControllers.avr?.enabled) || (preferKeyPresence && Boolean(effectiveControllers.avr)),
         },
         {
             key: "leak",
             title: "Протечки",
-            status: `${leak.filter((x) => x.wet || x.alarm_latched).length}/${leak.length}`,
-            online: leak.some((x) => x.enabled),
-            visible: leak.length > 0,
+            status: leak.length > 0
+                ? `${leak.filter((x) => x.wet || x.alarm_latched).length}/${leak.length}`
+                : `${countOf(leakSummary, "alert_count", "alert")}/${countOf(leakSummary, "enabled_count", "enabled")}`,
+            online: hasControllerData(leak, leakSummary),
+            visible: hasControllerData(leak, leakSummary),
         },
     ].filter((card) => card.visible);
+}
+
+function stackControllerPending(detail, key, primary = "enabled_count", alt = "enabled") {
+    if (!(detail?.scope_unit === "stack" && Number(detail?.scope_node_id || 0) > 0)) {
+        return false;
+    }
+    const section = detail?.controllers?.[key];
+    if (Array.isArray(section) && section.length > 0) {
+        return false;
+    }
+    const summary =
+        detail?.summary && typeof detail.summary === "object"
+            ? detail.summary
+            : detail?.system?.summary &&
+                typeof detail.system.summary === "object"
+              ? detail.system.summary
+              : null;
+    const value = summary?.[key];
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+    const raw = value?.[primary] ?? value?.[alt];
+    const num = Number(raw);
+    return Number.isFinite(num) ? num > 0 : true;
 }
 
 function controllerIconSvg(key) {
@@ -1138,7 +1207,15 @@ export class Ui {
       <tr><td>Вентилятор</td><td>${onOffDot(Boolean(fan.fan_on))}</td></tr>
     `;
 
-        const cards = summarizeControllers(detail.controllers);
+        const cards = summarizeControllers(
+            detail.controllers,
+            detail.summary || detail.system?.summary || null,
+            {
+                preferKeyPresence:
+                    detail?.scope_unit === "stack" &&
+                    Number(detail?.scope_node_id || 0) > 0,
+            },
+        );
         if (!cards.length) {
             this.deviceControllersGrid.innerHTML = this.renderEmptyState(
                 "Нет доступных контроллеров",
@@ -1289,7 +1366,9 @@ export class Ui {
         const meteo = asArray(detail?.controllers?.meteo);
         if (!meteo.length) {
             this.deviceMeteoGrid.innerHTML = this.renderEmptyState(
-                "Нет данных по метео",
+                stackControllerPending(detail, "meteo")
+                    ? "Идёт загрузка метео со слейва"
+                    : "Нет данных по метео",
             );
             return;
         }
@@ -1415,7 +1494,9 @@ export class Ui {
         const tanks = asArray(detail?.controllers?.tanks);
         if (!tanks.length) {
             this.deviceTanksGrid.innerHTML = this.renderEmptyState(
-                "Нет данных по бакам",
+                stackControllerPending(detail, "tanks")
+                    ? "Идёт загрузка баков со слейва"
+                    : "Нет данных по бакам",
             );
             return;
         }
@@ -1621,7 +1702,9 @@ export class Ui {
         const list = asArray(detail?.controllers?.thermo);
         if (!list.length) {
             this.deviceThermoGrid.innerHTML = this.renderEmptyState(
-                "Нет данных по термо",
+                stackControllerPending(detail, "thermo")
+                    ? "Идёт загрузка термостатов со слейва"
+                    : "Нет данных по термо",
             );
             return;
         }
@@ -1660,7 +1743,7 @@ export class Ui {
                     item?.sensor_name ?? item?.sensor_label ?? "",
                 ).trim();
                 const targetText = Number.isFinite(target)
-                    ? target.toFixed(1)
+                    ? String(Math.round(target))
                     : "--";
                 const sensorText = sensorHasTemp && Number.isFinite(sensor)
                     ? sensor.toFixed(1)
@@ -1708,7 +1791,7 @@ export class Ui {
                     "target",
                 ).write;
                 return `
-        <article class="tile thermo-card ${enabled && (powerWritable || modeWritable || targetWritable) ? "" : "disabled"}" data-thermo-id="${id}" data-power-on="${powerOn ? "1" : "0"}" data-mode="${esc(mode)}" data-target="${Number.isFinite(target) ? target.toFixed(1) : ""}">
+        <article class="tile thermo-card ${enabled && (powerWritable || modeWritable || targetWritable) ? "" : "disabled"}" data-thermo-id="${id}" data-power-on="${powerOn ? "1" : "0"}" data-mode="${esc(mode)}" data-target="${Number.isFinite(target) ? Math.round(target) : ""}">
           <div class="thermo-left">
             <div class="thermo-visual">
               <span class="socket-chip">#${id}</span>
@@ -1773,12 +1856,12 @@ export class Ui {
                 ${modeIcon(mode)} Сменить режим
               </button>
               <div class="thermo-adjust-group">
-                <button class="ghost btn-sm thermo-step-btn" data-action="target-down" ${enabled && targetWritable ? "" : "disabled"} aria-label="Уменьшить целевую температуру">−0.5</button>
+                <button class="ghost btn-sm thermo-step-btn" data-action="target-down" ${enabled && targetWritable ? "" : "disabled"} aria-label="Уменьшить целевую температуру">−1</button>
                 <div class="thermo-target-chip">
                   <span class="thermo-target-label">Цель</span>
                   <span class="thermo-target-value">${esc(targetText)}&deg;C</span>
                 </div>
-                <button class="ghost btn-sm thermo-step-btn" data-action="target-up" ${enabled && targetWritable ? "" : "disabled"} aria-label="Увеличить целевую температуру">+0.5</button>
+                <button class="ghost btn-sm thermo-step-btn" data-action="target-up" ${enabled && targetWritable ? "" : "disabled"} aria-label="Увеличить целевую температуру">+1</button>
               </div>
             </div>
           </div>

@@ -127,17 +127,21 @@ export class ApiRouter {
                 return;
             }
             const user = await this.usersDb.findByUsername(username);
-            const token = this.sessions.create(user || username, this.nowMs);
+            const token = await this.sessions.create(user || username);
             logger.info(
                 `api action: user: ${this.describeSessionUser(user || username)} action: login_success`,
             );
-            res.cookie("session", token, { httpOnly: true, sameSite: "lax" });
+            res.cookie("session", token, {
+                httpOnly: true,
+                sameSite: "lax",
+                maxAge: this.sessions.sessionTtlMs,
+            });
             res.json({ ok: true });
         });
 
-        this.app.post("/api/logout", this.requireAuth(), (req, res) => {
+        this.app.post("/api/logout", this.requireAuth(), async (req, res) => {
             const token = req.cookies?.session;
-            if (token) this.sessions.delete(token);
+            if (token) await this.sessions.delete(token);
             this.logSessionAction(req, "logout");
             res.clearCookie("session");
             res.json({ ok: true });
@@ -251,6 +255,7 @@ export class ApiRouter {
                     res.status(403).json({ ok: false, error: "forbidden" });
                     return;
                 }
+                this.logStackSummaryShape_(deviceId, sanitized);
                 res.json({ ok: true, device: sanitized });
             },
         );
@@ -451,7 +456,7 @@ export class ApiRouter {
                             allowed_objects,
                         },
                     );
-                    this.sessions.updateUser(user, req.params.username);
+                    await this.sessions.updateUser(user, req.params.username);
                     this.logSessionAction(
                         req,
                         "admin_update_user",
@@ -742,8 +747,8 @@ export class ApiRouter {
     }
 
     requireAuth() {
-        return (req, res, next) => {
-            const session = this.sessions.fromRequest(req);
+        return async (req, res, next) => {
+            const session = await this.sessions.fromRequest(req);
             if (!session) {
                 res.status(401).json({ ok: false, error: "unauthorized" });
                 return;
@@ -784,5 +789,39 @@ export class ApiRouter {
         logger.info(
             `api action: user: ${this.describeSessionUser(req?.session)} action: ${action}${details ? ` ${details}` : ""}`,
         );
+    }
+
+    logStackSummaryShape_(deviceId, summary) {
+        const stackUnits =
+            summary?.stack_units && typeof summary.stack_units === "object"
+                ? summary.stack_units
+                : null;
+        if (!stackUnits) {
+            logger.info(
+                `stack summary debug: device_id: ${deviceId} stack_units: none`,
+            );
+            return;
+        }
+        for (const [nodeId, unit] of Object.entries(stackUnits)) {
+            const controllers =
+                unit?.controllers && typeof unit.controllers === "object"
+                    ? unit.controllers
+                    : {};
+            const scopedSummary =
+                unit?.summary && typeof unit.summary === "object"
+                    ? unit.summary
+                    : {};
+            const controllerKeys = Object.keys(controllers);
+            const summaryKeys = Object.keys(scopedSummary);
+            const tanks = controllers?.tanks;
+            const tanksShape = Array.isArray(tanks)
+                ? `array:${tanks.length}`
+                : tanks && typeof tanks === "object"
+                  ? `object:enabled=${Number(tanks.enabled_count ?? tanks.enabled ?? 0)}`
+                  : "-";
+            logger.info(
+                `stack summary debug: device_id: ${deviceId} node_id: ${nodeId} controllers: ${controllerKeys.length ? controllerKeys.join(",") : "-"} summary: ${summaryKeys.length ? summaryKeys.join(",") : "-"} tanks: ${tanksShape}`,
+            );
+        }
     }
 }

@@ -55,6 +55,7 @@ export class AppServer {
         this.deviceWs = null;
         this.offlineTimer = null;
         this.devicePingTimer = null;
+        this.sessionCleanupTimer = null;
     }
 
     async init() {
@@ -125,12 +126,17 @@ export class AppServer {
             this.deviceWs?.pingAll();
         }, 10_000);
 
+        this.sessionCleanupTimer = setInterval(() => {
+            void this.sessions.cleanupExpired?.();
+        }, 60_000);
+
         await this.telegramBotService?.init();
     }
 
     async close() {
         if (this.offlineTimer) clearInterval(this.offlineTimer);
         if (this.devicePingTimer) clearInterval(this.devicePingTimer);
+        if (this.sessionCleanupTimer) clearInterval(this.sessionCleanupTimer);
         if (this.telegramBotService?.shutdown) {
             await this.telegramBotService.shutdown();
         }

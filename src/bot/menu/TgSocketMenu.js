@@ -376,7 +376,7 @@ export class TgSocketMenu {
             if (right) keyboard.text(right.label, right.data);
             keyboard.row();
         }
-        keyboard.text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId));
+        keyboard.text("◀️ Назад", controllersCallbackData(deviceId, nodeId));
         return keyboard;
     }
 
@@ -387,7 +387,7 @@ export class TgSocketMenu {
         mainMenuCallbackData,
     ) {
         return new InlineKeyboard().text(
-            "🧩 Контроллеры",
+            "◀️ Назад",
             controllersCallbackData(deviceId, nodeId || 0),
         );
     }

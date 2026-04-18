@@ -41,13 +41,13 @@ export class WebWsServer {
     }
 
     init() {
-        this.wss.on("connection", (ws, req) => {
+        this.wss.on("connection", async (ws, req) => {
             const cookies = (req.headers.cookie || "")
                 .split(";")
                 .map((v) => v.trim());
             const sessionCookie = cookies.find((c) => c.startsWith("session="));
             const token = sessionCookie ? sessionCookie.split("=")[1] : null;
-            const session = token ? this.sessions.get(token) : null;
+            const session = token ? await this.sessions.get(token) : null;
             if (!session) {
                 logger.warn("web auth failed");
                 ws.close(4401, "auth_failed");

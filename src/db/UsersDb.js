@@ -37,6 +37,7 @@ export class UsersDb {
                 telegram_notify_events: false,
                 notification_prefs_json: "[]",
                 allowed_objects_json: "[]",
+                telegram_menu_state_json: "",
             });
         }
 
@@ -86,6 +87,8 @@ export class UsersDb {
                 patch.allowed_objects_json =
                     JSON.stringify(normalizedAllowedObjects);
             }
+            if (typeof row.telegram_menu_state_json !== "string")
+                patch.telegram_menu_state_json = "";
             if (Object.keys(patch).length) {
                 await row.update(patch);
             }
@@ -145,6 +148,7 @@ export class UsersDb {
         telegram_notify_events = false,
         notification_prefs = [],
         allowed_objects = [],
+        telegram_menu_state = null,
     }) {
         const uname = String(username || "").trim();
         if (!uname) throw new Error("username_required");
@@ -173,6 +177,9 @@ export class UsersDb {
             ),
             allowed_objects_json: JSON.stringify(
                 this.normalizeAllowedObjects(allowed_objects),
+            ),
+            telegram_menu_state_json: this.normalizeTelegramMenuStateJson_(
+                telegram_menu_state,
             ),
         });
         return this.toPublicRow_(row);
@@ -243,9 +250,46 @@ export class UsersDb {
             next.allowed_objects_json = JSON.stringify(
                 this.normalizeAllowedObjects(patch.allowed_objects),
             );
+        if (Object.prototype.hasOwnProperty.call(patch, "telegram_menu_state"))
+            next.telegram_menu_state_json = this.normalizeTelegramMenuStateJson_(
+                patch.telegram_menu_state,
+            );
         if (Object.prototype.hasOwnProperty.call(patch, "password"))
             next.password_hash = sha256(patch.password || "");
         await row.update(next);
+        return this.toPublicRow_(row);
+    }
+
+    async updateTelegramMenuStateByIdentity(
+        { chatId = "", telegramUsername = "" } = {},
+        telegramMenuState = null,
+    ) {
+        const normalizedChatId = this.normalizeChatId(chatId);
+        const normalizedUsername =
+            this.normalizeTelegramUsername(telegramUsername).toLowerCase();
+        if (!normalizedChatId && !normalizedUsername) return null;
+        const { User } = await this.sqliteDb.init();
+        const rows = await User.findAll();
+        const row = rows.find((item) => {
+            const rowChatId = this.normalizeChatId(item.chat_id);
+            const rowUsername = this.normalizeTelegramUsername(
+                item.telegram_username,
+            ).toLowerCase();
+            if (normalizedChatId && rowChatId && rowChatId === normalizedChatId)
+                return true;
+            if (
+                normalizedUsername &&
+                rowUsername &&
+                rowUsername === normalizedUsername
+            )
+                return true;
+            return false;
+        });
+        if (!row) return null;
+        await row.update({
+            telegram_menu_state_json:
+                this.normalizeTelegramMenuStateJson_(telegramMenuState),
+        });
         return this.toPublicRow_(row);
     }
 
@@ -311,6 +355,27 @@ export class UsersDb {
         }
     }
 
+    parseTelegramMenuState_(value) {
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+            return value;
+        }
+        const raw = String(value || "").trim();
+        if (!raw) return null;
+        try {
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+                ? parsed
+                : null;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    normalizeTelegramMenuStateJson_(value) {
+        const parsed = this.parseTelegramMenuState_(value);
+        return parsed ? JSON.stringify(parsed) : "";
+    }
+
     toAuthRow_(row) {
         return {
             username: row.username || "",
@@ -332,6 +397,9 @@ export class UsersDb {
             ),
             allowed_objects: this.normalizeAllowedObjects(
                 this.parseAllowedObjects_(row.allowed_objects_json),
+            ),
+            telegram_menu_state: this.parseTelegramMenuState_(
+                row.telegram_menu_state_json,
             ),
         };
     }

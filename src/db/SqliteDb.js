@@ -138,6 +138,11 @@ export class SqliteDb {
                     allowNull: false,
                     defaultValue: "[]",
                 },
+                telegram_menu_state_json: {
+                    type: DataTypes.TEXT,
+                    allowNull: false,
+                    defaultValue: "",
+                },
             },
             {
                 tableName: "users",
@@ -180,6 +185,66 @@ export class SqliteDb {
             },
         );
 
+        const WebSession = sequelize.define(
+            "WebSession",
+            {
+                token: {
+                    type: DataTypes.STRING,
+                    primaryKey: true,
+                    allowNull: false,
+                },
+                uid: {
+                    type: DataTypes.STRING,
+                    allowNull: false,
+                    defaultValue: "",
+                },
+                username: {
+                    type: DataTypes.STRING,
+                    allowNull: false,
+                    defaultValue: "",
+                },
+                plc_username: {
+                    type: DataTypes.STRING,
+                    allowNull: false,
+                    defaultValue: "",
+                },
+                telegram_username: {
+                    type: DataTypes.STRING,
+                    allowNull: false,
+                    defaultValue: "",
+                },
+                chat_id: {
+                    type: DataTypes.STRING,
+                    allowNull: false,
+                    defaultValue: "",
+                },
+                allowed_objects_json: {
+                    type: DataTypes.TEXT,
+                    allowNull: false,
+                    defaultValue: "[]",
+                },
+                notification_prefs_json: {
+                    type: DataTypes.TEXT,
+                    allowNull: false,
+                    defaultValue: "[]",
+                },
+                created_at_ms: {
+                    type: DataTypes.BIGINT,
+                    allowNull: false,
+                    defaultValue: 0,
+                },
+                expires_at_ms: {
+                    type: DataTypes.BIGINT,
+                    allowNull: false,
+                    defaultValue: 0,
+                },
+            },
+            {
+                tableName: "web_sessions",
+                timestamps: false,
+            },
+        );
+
         await sequelize.sync();
         await this.ensureUserColumns_(sequelize);
 
@@ -190,6 +255,7 @@ export class SqliteDb {
             Device,
             User,
             TelegramConfig,
+            WebSession,
         };
         return this.models;
     }
@@ -225,6 +291,11 @@ export class SqliteDb {
             type: DataTypes.TEXT,
             allowNull: false,
             defaultValue: "[]",
+        });
+        await addIfMissing("telegram_menu_state_json", {
+            type: DataTypes.TEXT,
+            allowNull: false,
+            defaultValue: "",
         });
     }
 }

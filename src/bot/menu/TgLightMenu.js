@@ -381,7 +381,7 @@ export class TgLightMenu {
             if (right) keyboard.text(right.label, right.data);
             keyboard.row();
         }
-        keyboard.text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId));
+        keyboard.text("◀️ Назад", controllersCallbackData(deviceId, nodeId));
         return keyboard;
     }
 

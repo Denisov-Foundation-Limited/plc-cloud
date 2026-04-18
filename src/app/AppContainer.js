@@ -46,6 +46,7 @@ export class AppContainer {
             protoPath: asValue(this.protoPath),
             defaultObjects: asValue(["Квартира", "Дача", "Деревня"]),
             onlineTtlMs: asValue(30_000),
+            sessionTtlMs: asValue(30 * 24 * 60 * 60 * 1000),
             seedSampleEnabled: asValue(
                 process.env.PLC_CLOUD_SEED_SAMPLE === "1",
             ),

@@ -12,7 +12,7 @@
 import { InlineKeyboard } from "grammy";
 import { canSendControllerCommand } from "../../auth/AccessControl.js";
 
-const THERMO_MODES = ["off", "heat_only", "cool_only", "auto"];
+const THERMO_MODES = ["heat_only", "cool_only", "auto"];
 
 function escapeHtml(value) {
     return String(value ?? "")
@@ -34,6 +34,17 @@ function panelDivider() {
     return "━━━━━━━━━━━━━━━━━";
 }
 
+function objectIcon(objectItem) {
+    const kind = String(
+        typeof objectItem === "string" ? "house" : objectItem?.icon || "house",
+    ).toLowerCase();
+    if (kind === "apartment") return "🏢";
+    if (kind === "dacha") return "🏡";
+    if (kind === "garage") return "🚗";
+    if (kind === "garden") return "🌿";
+    return "🏠";
+}
+
 function modeLabel(mode) {
     const normalized = String(mode || "off").toLowerCase();
     if (normalized === "heat_only") return "Нагрев";
@@ -46,7 +57,7 @@ function modeIcon(mode) {
     const normalized = String(mode || "off").toLowerCase();
     if (normalized === "heat_only") return "🔥";
     if (normalized === "cool_only") return "❄️";
-    if (normalized === "auto") return "◌";
+    if (normalized === "auto") return "🔄";
     return "⏻";
 }
 
@@ -55,21 +66,35 @@ function processLabel(item) {
     if (item?.heat_on) return "нагрев";
     if (item?.cool_on) return "охлаждение";
     if (item?.power_on) return "ожидание";
-    return "питание выкл";
+    return "выключен";
 }
 
 function processIcon(item) {
-    if (!item?.enabled) return "⚪";
+    if (!item?.enabled) return "⏸";
     if (item?.heat_on) return "🔥";
     if (item?.cool_on) return "❄️";
-    if (item?.power_on) return "🟢";
-    return "⚪";
+    if (item?.power_on) return "🌡️";
+    return "⏻";
+}
+
+function statusIcon(item) {
+    if (!item?.enabled) return "⏸";
+    if (item?.heat_on) return "🔥";
+    if (item?.cool_on) return "❄️";
+    if (!item?.power_on) return "⏻";
+    return "⏸";
 }
 
 function formatTemperature(value) {
     const num = Number(value);
     if (!Number.isFinite(num)) return "--";
     return num.toFixed(1);
+}
+
+function formatTarget(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return "--";
+    return String(Math.round(num));
 }
 
 function itemName(item, fallback) {
@@ -80,12 +105,13 @@ function itemName(item, fallback) {
 function buttonLabel(item, fallback) {
     const raw = itemName(item, fallback);
     const short = raw.length > 14 ? `${raw.slice(0, 14)}…` : raw;
-    return `${processIcon(item)} ${short}`;
+    return `♨️ ${short}`;
 }
 
 function nextMode(currentMode) {
     const current = String(currentMode || "off").toLowerCase();
     const index = THERMO_MODES.indexOf(current);
+    if (index < 0) return THERMO_MODES[0];
     return THERMO_MODES[(index + 1 + THERMO_MODES.length) % THERMO_MODES.length];
 }
 
@@ -112,7 +138,12 @@ export class TgThermoMenu {
             controllersCallbackData,
         },
     ) {
-        const detail = await getScopedDetail(deviceId, nodeId, user);
+        const detail = await this.waitForThermoDetail(
+            deviceId,
+            nodeId,
+            user,
+            getScopedDetail,
+        );
         if (!detail) {
             await replyMenu(
                 ctx,
@@ -132,7 +163,9 @@ export class TgThermoMenu {
         if (!list.length) {
             await replyMenu(
                 ctx,
-                "Нет доступных термостатов.",
+                detail?._controller_loading === "thermo"
+                    ? "Данные термостатов со слейва ещё загружаются."
+                    : "Нет доступных термостатов.",
                 this.buildBackKeyboard(
                     deviceId,
                     nodeId,
@@ -153,17 +186,20 @@ export class TgThermoMenu {
             const sensor = formatTemperature(
                 item?.temp_c ?? item?.sensor_temp_c ?? item?.sensor_temp,
             );
-            const target = formatTemperature(item?.target ?? item?.target_c);
+            const target = formatTarget(item?.target ?? item?.target_c);
             return [
-                `${processIcon(item)} ${itemName(item, `Термо ${id}`)}`,
-                `   ${modeIcon(item?.mode)} Режим работы: ${modeLabel(item?.mode)}`,
-                `   🌡 ${sensorName || `Датчик ${Number(item?.sensor || 0) || "?"}`}: ${sensor}°C / 🎯 ${target}°C`,
+                `♨️ ${itemName(item, `Термо ${id}`)}`,
+                `      📟 Статус: ${statusIcon(item)}`,
+                `      🌡 ${sensorName || `Датчик ${Number(item?.sensor || 0) || "?"}`}: ${sensor}°C / 🎯 ${target}°C`,
             ].join("\n");
         });
         await replyMenu(
             ctx,
             [
-                panelTitle(`🌡 ${detail.name || `#${deviceId}`}`, "Термостаты"),
+                panelTitle(
+                    `${objectIcon({ icon: detail?.object_icon || detail?.object_type || "house" })} ${detail.name || `#${deviceId}`}`,
+                    "Термостаты",
+                ),
                 lines.map(escapeHtml).join("\n"),
                 `${panelDivider()}\nВсего: ${list.length}   Активно: ${activeCount}`,
             ].join("\n\n"),
@@ -188,7 +224,12 @@ export class TgThermoMenu {
             controllersCallbackData,
         },
     ) {
-        const detail = await getScopedDetail(deviceId, nodeId, user);
+        const detail = await this.waitForThermoDetail(
+            deviceId,
+            nodeId,
+            user,
+            getScopedDetail,
+        );
         if (!detail) {
             await replyMenu(
                 ctx,
@@ -206,7 +247,9 @@ export class TgThermoMenu {
         if (!item) {
             await replyMenu(
                 ctx,
-                "Термостат не найден.",
+                detail?._controller_loading === "thermo"
+                    ? "Данные термостата со слейва ещё загружаются."
+                    : "Термостат не найден.",
                 this.buildBackKeyboard(
                     deviceId,
                     nodeId,
@@ -223,22 +266,16 @@ export class TgThermoMenu {
         const sensor = formatTemperature(
             item?.temp_c ?? item?.sensor_temp_c ?? item?.sensor_temp,
         );
-        const target = formatTemperature(item?.target ?? item?.target_c);
+        const target = formatTarget(item?.target ?? item?.target_c);
         const lines = [
-            panelTitle(
-                `🌡 ${itemName(item, `Термо ${id}`)}`,
-                `${detail.name || `#${deviceId}`}`,
-            ),
-            `${processIcon(item)} <b>${escapeHtml(processLabel(item))}</b>`,
-            `${modeIcon(item?.mode)} Режим работы: <b>${escapeHtml(modeLabel(item?.mode))}</b>`,
+            panelTitle(`♨️ ${itemName(item, `Термо ${id}`)}`),
+            "",
+            `🔌 Питание: ${item?.power_on ? "🟢" : "⚪"}`,
+            `⚙️ Режим: <b>${escapeHtml(modeLabel(item?.mode))}</b>`,
             `🪪 Датчик: <b>${escapeHtml(sensorName || `#${Number(item?.sensor || 0) || "?"}`)}</b>`,
             `🌡 Датчик: <b>${escapeHtml(sensor)}°C</b>`,
             `🎯 Цель: <b>${escapeHtml(target)}°C</b>`,
-            `${panelDivider()}`,
-            `${item?.power_on ? "🟢" : "⚪"} Питание`,
-            `${item?.heat_on ? "🔥" : "⚪"} Нагрев`,
-            `${item?.cool_on ? "❄️" : "⚪"} Охлаждение`,
-            `${item?.enabled ? "🟢" : "⚪"} Контур`,
+            `📟 Статус: ${statusIcon(item)}`,
         ];
         await replyMenu(
             ctx,
@@ -392,8 +429,7 @@ export class TgThermoMenu {
             });
             return;
         }
-        const nextTarget =
-            Math.round((currentTarget + Number(delta || 0)) * 10) / 10;
+        const nextTarget = Math.round(currentTarget + Number(delta || 0));
         const ok = await this.sendCommand({
             deviceId,
             nodeId,
@@ -410,7 +446,7 @@ export class TgThermoMenu {
             return;
         }
         await ctx.answerCallbackQuery({
-            text: `Цель: ${nextTarget.toFixed(1)}°C`,
+            text: `Цель: ${nextTarget}°C`,
         });
         await this.replyPatchedItem(
             ctx,
@@ -421,6 +457,34 @@ export class TgThermoMenu {
             mainMenuCallbackData,
             controllersCallbackData,
         );
+    }
+
+    async refreshItem(
+        ctx,
+        {
+            deviceId,
+            nodeId = null,
+            itemId,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        },
+    ) {
+        await ctx.answerCallbackQuery({
+            text: "Обновляю...",
+        });
+        await this.openItem(ctx, {
+            deviceId,
+            nodeId,
+            itemId,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        });
     }
 
     async sendCommand({
@@ -465,11 +529,36 @@ export class TgThermoMenu {
         if (!result?.ok) return false;
         this.deviceWs?.sendGet(
             Number(deviceId),
-            ["controllers"],
+            nodeId ? ["system", "controllers"] : ["controllers"],
             nodeId ? "stack" : "local",
             nodeId || undefined,
         );
         return true;
+    }
+
+    async waitForThermoDetail(deviceId, nodeId, user, getScopedDetail) {
+        let detail = await getScopedDetail(deviceId, nodeId, user);
+        const hasThermo = (value) =>
+            Array.isArray(value?.controllers?.thermo) &&
+            value.controllers.thermo.length > 0;
+        if (hasThermo(detail) || !nodeId || !this.deviceWs) {
+            return detail;
+        }
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < 8000) {
+            this.deviceWs.sendGet(
+                Number(deviceId),
+                ["system", "controllers"],
+                "stack",
+                nodeId || undefined,
+            );
+            await this.delay(250);
+            detail = await getScopedDetail(deviceId, nodeId, user);
+            if (hasThermo(detail)) {
+                return detail;
+            }
+        }
+        return detail;
     }
 
     findItem(detail, itemId) {
@@ -514,22 +603,16 @@ export class TgThermoMenu {
         const sensor = formatTemperature(
             item?.temp_c ?? item?.sensor_temp_c ?? item?.sensor_temp,
         );
-        const target = formatTemperature(item?.target ?? item?.target_c);
+        const target = formatTarget(item?.target ?? item?.target_c);
         const lines = [
-            panelTitle(
-                `🌡 ${itemName(item, `Термо ${id}`)}`,
-                `${patched.name || `#${patched.device_id}`}`,
-            ),
-            `${processIcon(item)} <b>${escapeHtml(processLabel(item))}</b>`,
-            `${modeIcon(item?.mode)} Режим работы: <b>${escapeHtml(modeLabel(item?.mode))}</b>`,
+            panelTitle(`♨️ ${itemName(item, `Термо ${id}`)}`),
+            "",
+            `🔌 Питание: ${item?.power_on ? "🟢" : "⚪"}`,
+            `⚙️ Режим: <b>${escapeHtml(modeLabel(item?.mode))}</b>`,
             `🪪 Датчик: <b>${escapeHtml(sensorName || `#${Number(item?.sensor || 0) || "?"}`)}</b>`,
             `🌡 Датчик: <b>${escapeHtml(sensor)}°C</b>`,
             `🎯 Цель: <b>${escapeHtml(target)}°C</b>`,
-            `${panelDivider()}`,
-            `${item?.power_on ? "🟢" : "⚪"} Питание`,
-            `${item?.heat_on ? "🔥" : "⚪"} Нагрев`,
-            `${item?.cool_on ? "❄️" : "⚪"} Охлаждение`,
-            `${item?.enabled ? "🟢" : "⚪"} Контур`,
+            `📟 Статус: ${statusIcon(item)}`,
         ];
         await replyMenu(
             ctx,
@@ -540,6 +623,7 @@ export class TgThermoMenu {
                 controllersCallbackData,
                 mainMenuCallbackData,
             ),
+            { force_new_message: true },
         );
     }
 
@@ -566,7 +650,7 @@ export class TgThermoMenu {
             if (right) keyboard.text(right.label, right.data);
             keyboard.row();
         }
-        keyboard.text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId));
+        keyboard.text("◀️ Назад", controllersCallbackData(deviceId, nodeId));
         return keyboard;
     }
 
@@ -582,7 +666,7 @@ export class TgThermoMenu {
         const itemId = Number(item?.id);
         keyboard
             .text(
-                item?.power_on ? "⏻ Выключить" : "⏻ Включить",
+                `${item?.power_on ? "🟢" : "⚪"} Питание`,
                 this.powerCallbackData(deviceId, nodeId, itemId),
             )
             .text(
@@ -591,16 +675,15 @@ export class TgThermoMenu {
             )
             .row();
         keyboard
-            .text("−0.5°C", this.targetCallbackData(deviceId, nodeId, itemId, -5))
-            .text("+0.5°C", this.targetCallbackData(deviceId, nodeId, itemId, 5))
+            .text("−1°C", this.targetCallbackData(deviceId, nodeId, itemId, -1))
+            .text("+1°C", this.targetCallbackData(deviceId, nodeId, itemId, 1))
             .row();
         keyboard
             .text(
-                "🌡 К списку термо",
-                this.controllerCallbackData(deviceId, nodeId),
+                "🔄 Обновить",
+                this.refreshCallbackData(deviceId, nodeId, itemId),
             )
-            .row();
-        keyboard.text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId));
+            .text("◀️ Назад", this.controllerCallbackData(deviceId, nodeId));
         return keyboard;
     }
 
@@ -611,7 +694,7 @@ export class TgThermoMenu {
         mainMenuCallbackData,
     ) {
         return new InlineKeyboard().text(
-            "🧩 Контроллеры",
+            "◀️ Назад",
             controllersCallbackData(deviceId, nodeId || 0),
         );
     }
@@ -632,8 +715,12 @@ export class TgThermoMenu {
         return `menu:thermo:mode:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}`;
     }
 
-    targetCallbackData(deviceId, nodeId = 0, itemId, deltaTenths = 0) {
-        return `menu:thermo:target:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}:${Number(deltaTenths || 0)}`;
+    targetCallbackData(deviceId, nodeId = 0, itemId, delta = 0) {
+        return `menu:thermo:target:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}:${Number(delta || 0)}`;
+    }
+
+    refreshCallbackData(deviceId, nodeId = 0, itemId) {
+        return `menu:thermo:refresh:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}`;
     }
 
     delay(ms) {

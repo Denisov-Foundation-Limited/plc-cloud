@@ -202,10 +202,36 @@ export class TgWateringMenu {
         const list = Array.isArray(detail?.controllers?.watering)
             ? detail.controllers.watering
             : [];
+        const summary =
+            !Array.isArray(detail?.controllers?.watering) &&
+            detail?.controllers?.watering &&
+            typeof detail.controllers.watering === "object"
+                ? detail.controllers.watering
+                : null;
         if (!list.length) {
+            if (summary && Number(summary?.enabled_count ?? 0) > 0) {
+                await replyMenu(
+                    ctx,
+                    [
+                        panelTitle(`💧 ${detail.name || `#${deviceId}`}`, "Полив"),
+                        `📋 Правил: <b>${Number(summary?.enabled_count ?? 0)}</b>`,
+                        `📟 Активно: <b>${Number(summary?.active_count ?? 0)}</b>`,
+                        "Подробные правила для stack-полива пока не загружены в облако.",
+                    ].join("\n"),
+                    this.buildBackKeyboard(
+                        deviceId,
+                        nodeId,
+                        controllersCallbackData,
+                        mainMenuCallbackData,
+                    ),
+                );
+                return;
+            }
             await replyMenu(
                 ctx,
-                "Нет доступных правил полива.",
+                detail?._controller_loading === "watering"
+                    ? "Данные полива со слейва ещё загружаются."
+                    : "Нет доступных правил полива.",
                 this.buildBackKeyboard(
                     deviceId,
                     nodeId,
@@ -829,7 +855,7 @@ export class TgWateringMenu {
             if (right) keyboard.text(right.label, right.data);
             keyboard.row();
         }
-        keyboard.text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId));
+        keyboard.text("◀️ Назад", controllersCallbackData(deviceId, nodeId));
         return keyboard;
     }
 
@@ -871,7 +897,7 @@ export class TgWateringMenu {
                 this.controllerCallbackData(deviceId, nodeId),
             )
             .row();
-        keyboard.text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId));
+        keyboard.text("◀️ Назад", controllersCallbackData(deviceId, nodeId));
         return keyboard;
     }
 
@@ -938,7 +964,7 @@ export class TgWateringMenu {
                 this.itemCallbackData(deviceId, nodeId, itemId),
             )
             .row();
-        keyboard.text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId));
+        keyboard.text("◀️ Назад", controllersCallbackData(deviceId, nodeId));
         return keyboard;
     }
 
@@ -949,7 +975,7 @@ export class TgWateringMenu {
         mainMenuCallbackData,
     ) {
         return new InlineKeyboard().text(
-            "🧩 Контроллеры",
+            "◀️ Назад",
             controllersCallbackData(deviceId, nodeId || 0),
         );
     }

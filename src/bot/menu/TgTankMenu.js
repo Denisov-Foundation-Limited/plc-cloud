@@ -32,11 +32,38 @@ function panelDivider() {
     return "━━━━━━━━━━━━━━━━━";
 }
 
+function objectIcon(objectItem) {
+    const kind = String(
+        typeof objectItem === "string" ? "house" : objectItem?.icon || "house",
+    ).toLowerCase();
+    if (kind === "apartment") return "🏢";
+    if (kind === "dacha") return "🏡";
+    if (kind === "garage") return "🚗";
+    if (kind === "garden") return "🌿";
+    return "🏠";
+}
+
 function tankLevelLabel(item) {
     if (item?.level_full) return "полный";
     if (item?.level_mid) return "средний";
     if (item?.level_low) return "низкий";
     return "пусто";
+}
+
+function tankLevelPercent(item) {
+    const direct =
+        item?.level_percent ??
+        item?.level_pct ??
+        item?.percent ??
+        item?.level;
+    const numeric = Number(direct);
+    if (Number.isFinite(numeric) && numeric >= 0) {
+        return Math.max(0, Math.min(100, Math.round(numeric)));
+    }
+    if (item?.level_full) return 99;
+    if (item?.level_mid) return 66;
+    if (item?.level_low) return 33;
+    return 0;
 }
 
 function tankLevelIcon(item) {
@@ -49,7 +76,7 @@ function tankLevelIcon(item) {
 function buttonLabel(item, fallback) {
     const raw = String(item?.name || fallback).trim() || fallback;
     const short = raw.length > 14 ? `${raw.slice(0, 14)}…` : raw;
-    return `${tankLevelIcon(item)} ${short}`;
+    return `🛢 ${short}`;
 }
 
 function itemName(item, fallback) {
@@ -80,7 +107,12 @@ export class TgTankMenu {
             controllersCallbackData,
         },
     ) {
-        const detail = await getScopedDetail(deviceId, nodeId, user);
+        const detail = await this.waitForTankDetail(
+            deviceId,
+            nodeId,
+            user,
+            getScopedDetail,
+        );
         if (!detail) {
             await replyMenu(
                 ctx,
@@ -97,10 +129,39 @@ export class TgTankMenu {
         const list = Array.isArray(detail?.controllers?.tanks)
             ? detail.controllers.tanks
             : [];
+        const summary =
+            !Array.isArray(detail?.controllers?.tanks) &&
+            detail?.controllers?.tanks &&
+            typeof detail.controllers.tanks === "object"
+                ? detail.controllers.tanks
+                : null;
         if (!list.length) {
+            if (summary && Number(summary?.enabled_count ?? 0) > 0) {
+                await replyMenu(
+                    ctx,
+                    [
+                        panelTitle(
+                            `${objectIcon({ icon: detail?.object_icon || detail?.object_type || "house" })} ${detail.name || `#${deviceId}`}`,
+                            "Баки",
+                        ),
+                        `🛢 Баков: <b>${Number(summary?.enabled_count ?? 0)}</b>`,
+                        `🚨 Аварии: <b>${Number(summary?.alert_count ?? 0)}</b>`,
+                        "Подробные баки со слейва ещё не догружены.",
+                    ].join("\n"),
+                    this.buildBackKeyboard(
+                        deviceId,
+                        nodeId,
+                        controllersCallbackData,
+                        mainMenuCallbackData,
+                    ),
+                );
+                return;
+            }
             await replyMenu(
                 ctx,
-                "Нет доступных баков.",
+                detail?._controller_loading === "tanks"
+                    ? "Данные баков со слейва ещё загружаются."
+                    : "Нет доступных баков.",
                 this.buildBackKeyboard(
                     deviceId,
                     nodeId,
@@ -114,14 +175,17 @@ export class TgTankMenu {
         const lines = list.map((item) => {
             const id = Number(item?.id);
             return [
-                `${tankLevelIcon(item)} ${itemName(item, `Бак ${id}`)}`,
-                `   Уровень: ${tankLevelLabel(item)}  ·  Питание: ${item?.power_on ? "ВКЛ" : "ВЫКЛ"}`,
+                `🛢 ${itemName(item, `Бак ${id}`)}`,
+                `    🔌 Питание: ${item?.power_on ? "🟢" : "⚪"} / 💧 Уровень: ${tankLevelPercent(item)}%`,
             ].join("\n");
         });
         await replyMenu(
             ctx,
             [
-                panelTitle(`🛢 ${detail.name || `#${deviceId}`}`, "Баки"),
+                panelTitle(
+                    `${objectIcon({ icon: detail?.object_icon || detail?.object_type || "house" })} ${detail.name || `#${deviceId}`}`,
+                    "Баки",
+                ),
                 lines.map(escapeHtml).join("\n\n"),
                 `${panelDivider()}\nВсего: ${list.length}   Аварии: ${alarmCount}`,
             ].join("\n\n"),
@@ -146,7 +210,12 @@ export class TgTankMenu {
             controllersCallbackData,
         },
     ) {
-        const detail = await getScopedDetail(deviceId, nodeId, user);
+        const detail = await this.waitForTankDetail(
+            deviceId,
+            nodeId,
+            user,
+            getScopedDetail,
+        );
         if (!detail) {
             await replyMenu(
                 ctx,
@@ -176,15 +245,13 @@ export class TgTankMenu {
         }
         const id = Number(item?.id);
         const lines = [
-            panelTitle(
-                `🛢 ${itemName(item, `Бак ${id}`)}`,
-                `${detail.name || `#${deviceId}`}`,
-            ),
-            `${tankLevelIcon(item)} Уровень: <b>${escapeHtml(tankLevelLabel(item))}</b>`,
-            `${item?.power_on ? "🟢" : "⚪"} Питание: <b>${item?.power_on ? "ВКЛ" : "ВЫКЛ"}</b>`,
-            `${item?.valve_on ? "🟢" : "⚪"} Клапан: <b>${item?.valve_on ? "ВКЛ" : "ВЫКЛ"}</b>`,
-            `${item?.pump_on ? "🟢" : "⚪"} Насос: <b>${item?.pump_on ? "ВКЛ" : "ВЫКЛ"}</b>`,
-            `${item?.alarm_on ? "🔴" : "⚪"} Авария: <b>${item?.alarm_on ? "ДА" : "НЕТ"}</b>`,
+            panelTitle(`🛢 ${itemName(item, `Бак ${id}`)}`),
+            "",
+            `🔌 Питание: ${item?.power_on ? "🟢" : "⚪"}`,
+            `💧 Уровень: <b>${tankLevelPercent(item)}%</b>`,
+            `🚰 Набор: ${item?.valve_on ? "🟢" : "⚪"}`,
+            `🌀 Насос: ${item?.pump_on ? "🟢" : "⚪"}`,
+            `🚨 Авария: ${item?.alarm_on ? "🔴" : "⚪"}`,
         ];
         await replyMenu(
             ctx,
@@ -262,22 +329,61 @@ export class TgTankMenu {
         }
         this.deviceWs?.sendGet(
             Number(deviceId),
-            ["controllers"],
+            nodeId ? ["system", "controllers"] : ["controllers"],
             nodeId ? "stack" : "local",
             nodeId || undefined,
         );
         await ctx.answerCallbackQuery({
             text: nextState === "on" ? "Питание включаю..." : "Питание выключаю...",
         });
-        await this.replyPatchedItem(
-            ctx,
-            detail,
+        const freshDetail = await this.waitForFreshDetail(
+            deviceId,
+            nodeId,
+            user,
+            getScopedDetail,
             itemId,
-            (current) => ({ ...current, power_on: nextState === "on" }),
+            item,
+            nextState === "on",
+        );
+        await this.replyFreshItem(
+            ctx,
+            freshDetail || this.patchItem(detail, itemId, (current) => ({
+                ...current,
+                power_on: nextState === "on",
+            })),
+            itemId,
             replyMenu,
             mainMenuCallbackData,
             controllersCallbackData,
         );
+    }
+
+    async refreshItem(
+        ctx,
+        {
+            deviceId,
+            nodeId = null,
+            itemId,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        },
+    ) {
+        await ctx.answerCallbackQuery({
+            text: "Обновляю...",
+        });
+        await this.openItem(ctx, {
+            deviceId,
+            nodeId,
+            itemId,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        });
     }
 
     findItem(detail, itemId) {
@@ -303,40 +409,94 @@ export class TgTankMenu {
         };
     }
 
-    async replyPatchedItem(
+    async replyFreshItem(
         ctx,
         detail,
         itemId,
-        updater,
         replyMenu,
         mainMenuCallbackData,
         controllersCallbackData,
     ) {
-        const patched = this.patchItem(detail, itemId, updater);
-        const item = this.findItem(patched, itemId);
+        const item = this.findItem(detail, itemId);
         if (!item) return;
         const id = Number(item?.id);
         const lines = [
-            panelTitle(
-                `🛢 ${itemName(item, `Бак ${id}`)}`,
-                `${patched.name || `#${patched.device_id}`}`,
-            ),
-            `${tankLevelIcon(item)} Уровень: <b>${escapeHtml(tankLevelLabel(item))}</b>`,
-            `${item?.power_on ? "🟢" : "⚪"} Питание: <b>${item?.power_on ? "ВКЛ" : "ВЫКЛ"}</b>`,
-            `${item?.valve_on ? "🟢" : "⚪"} Клапан: <b>${item?.valve_on ? "ВКЛ" : "ВЫКЛ"}</b>`,
-            `${item?.pump_on ? "🟢" : "⚪"} Насос: <b>${item?.pump_on ? "ВКЛ" : "ВЫКЛ"}</b>`,
-            `${item?.alarm_on ? "🔴" : "⚪"} Авария: <b>${item?.alarm_on ? "ДА" : "НЕТ"}</b>`,
+            panelTitle(`🛢 ${itemName(item, `Бак ${id}`)}`),
+            "",
+            `🔌 Питание: ${item?.power_on ? "🟢" : "⚪"}`,
+            `💧 Уровень: <b>${tankLevelPercent(item)}%</b>`,
+            `🚰 Набор: ${item?.valve_on ? "🟢" : "⚪"}`,
+            `🌀 Насос: ${item?.pump_on ? "🟢" : "⚪"}`,
+            `🚨 Авария: ${item?.alarm_on ? "🔴" : "⚪"}`,
         ];
         await replyMenu(
             ctx,
             lines.join("\n"),
             this.buildItemKeyboard(
-                patched,
+                detail,
                 item,
                 controllersCallbackData,
                 mainMenuCallbackData,
             ),
+            { force_new_message: true },
         );
+    }
+
+    async waitForFreshDetail(
+        deviceId,
+        nodeId,
+        user,
+        getScopedDetail,
+        itemId,
+        prevItem,
+        expectedPowerOn,
+    ) {
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+            if (attempt > 0) {
+                this.deviceWs?.sendGet(
+                    Number(deviceId),
+                    nodeId ? ["system", "controllers"] : ["controllers"],
+                    nodeId ? "stack" : "local",
+                    nodeId || undefined,
+                );
+            }
+            await this.delay(attempt === 0 ? 500 : 350);
+            const detail = await getScopedDetail(deviceId, nodeId, user);
+            const item = this.findItem(detail, itemId);
+            if (!detail || !item) continue;
+            const powerMatches = Boolean(item?.power_on) === Boolean(expectedPowerOn);
+            const valveChanged = Boolean(item?.valve_on) !== Boolean(prevItem?.valve_on);
+            const pumpChanged = Boolean(item?.pump_on) !== Boolean(prevItem?.pump_on);
+            if (powerMatches && (valveChanged || pumpChanged || attempt >= 2)) {
+                return detail;
+            }
+        }
+        return await getScopedDetail(deviceId, nodeId, user);
+    }
+
+    async waitForTankDetail(deviceId, nodeId, user, getScopedDetail) {
+        let detail = await getScopedDetail(deviceId, nodeId, user);
+        const hasTanks = (value) =>
+            Array.isArray(value?.controllers?.tanks) &&
+            value.controllers.tanks.length > 0;
+        if (hasTanks(detail) || !nodeId || !this.deviceWs) {
+            return detail;
+        }
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < 8000) {
+            this.deviceWs.sendGet(
+                Number(deviceId),
+                ["system", "controllers"],
+                "stack",
+                nodeId || undefined,
+            );
+            await this.delay(250);
+            detail = await getScopedDetail(deviceId, nodeId, user);
+            if (hasTanks(detail)) {
+                return detail;
+            }
+        }
+        return detail;
     }
 
     buildKeyboard(detail, controllersCallbackData, mainMenuCallbackData) {
@@ -362,7 +522,7 @@ export class TgTankMenu {
             if (right) keyboard.text(right.label, right.data);
             keyboard.row();
         }
-        keyboard.text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId));
+        keyboard.text("◀️ Назад", controllersCallbackData(deviceId, nodeId));
         return keyboard;
     }
 
@@ -378,17 +538,16 @@ export class TgTankMenu {
         const itemId = Number(item?.id);
         keyboard
             .text(
-                item?.power_on ? "⏻ Выключить питание" : "⏻ Включить питание",
+                `${item?.power_on ? "🟢" : "⚪"} Питание`,
                 this.powerCallbackData(deviceId, nodeId, itemId),
             )
             .row();
         keyboard
             .text(
-                "🛢 К списку баков",
-                this.controllerCallbackData(deviceId, nodeId),
+                "🔄 Обновить",
+                this.refreshCallbackData(deviceId, nodeId, itemId),
             )
-            .row();
-        keyboard.text("🧩 Контроллеры", controllersCallbackData(deviceId, nodeId));
+            .text("◀️ Назад", this.controllerCallbackData(deviceId, nodeId));
         return keyboard;
     }
 
@@ -399,7 +558,7 @@ export class TgTankMenu {
         mainMenuCallbackData,
     ) {
         return new InlineKeyboard().text(
-            "🧩 Контроллеры",
+            "◀️ Назад",
             controllersCallbackData(deviceId, nodeId || 0),
         );
     }
@@ -414,6 +573,10 @@ export class TgTankMenu {
 
     powerCallbackData(deviceId, nodeId = 0, itemId) {
         return `menu:tanks:power:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}`;
+    }
+
+    refreshCallbackData(deviceId, nodeId = 0, itemId) {
+        return `menu:tanks:refresh:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}`;
     }
 
     delay(ms) {

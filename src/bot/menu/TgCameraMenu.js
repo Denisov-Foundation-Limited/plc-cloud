@@ -299,7 +299,7 @@ export class TgCameraMenu {
         });
         keyboard
             .text(
-                "🧩 Контроллеры",
+                "◀️ Назад",
                 controllersCallbackData(
                     Number(detail?.device_id),
                     Number(detail?.node_id || 0),
@@ -310,7 +310,7 @@ export class TgCameraMenu {
 
     buildBackKeyboard(deviceId, nodeId, controllersCallbackData, mainMenuCallbackData) {
         return new InlineKeyboard().text(
-            "🧩 Контроллеры",
+            "◀️ Назад",
             controllersCallbackData(deviceId, nodeId || 0),
         );
     }
