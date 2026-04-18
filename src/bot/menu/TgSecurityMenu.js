@@ -54,6 +54,125 @@ function itemName(item, fallback) {
     return raw || fallback;
 }
 
+function securitySensors(detail) {
+    const security =
+        detail?.controllers?.security &&
+        typeof detail.controllers.security === "object"
+            ? detail.controllers.security
+            : null;
+    return Array.isArray(security?.sensors) ? security.sensors : [];
+}
+
+function triggeredSensors(detail) {
+    return securitySensors(detail).filter((item) => Boolean(item?.detect));
+}
+
+function isMasterScope(detail) {
+    return !Number(detail?.node_id || 0);
+}
+
+function aggregatedTriggeredSensors(detail) {
+    const result = [];
+    const localUnitName = itemName(detail, `#${detail?.device_id || ""}`);
+    for (const sensor of triggeredSensors(detail)) {
+        result.push({
+            ...sensor,
+            _unit_name: localUnitName,
+            _from_stack: false,
+        });
+    }
+    if (!isMasterScope(detail)) return result;
+    const stackUnits =
+        detail?.stack_units && typeof detail.stack_units === "object"
+            ? detail.stack_units
+            : {};
+    for (const unit of Object.values(stackUnits)) {
+        if (!unit || typeof unit !== "object") continue;
+        const unitName = itemName(unit, "Юнит");
+        const unitSecurity =
+            unit?.controllers?.security &&
+            typeof unit.controllers.security === "object"
+                ? unit.controllers.security
+                : null;
+        const sensors = Array.isArray(unitSecurity?.sensors)
+            ? unitSecurity.sensors
+            : [];
+        for (const sensor of sensors) {
+            if (!sensor?.detect) continue;
+            result.push({
+                ...sensor,
+                _unit_name: unitName,
+                _from_stack: true,
+            });
+        }
+    }
+    return result;
+}
+
+function securityDetailLines(detail, security) {
+    const sensors = Array.isArray(security?.sensors) ? security.sensors : [];
+    const detectedCount = sensors.length
+        ? sensors.filter((item) => Boolean(item?.detect)).length
+        : Number(security?.detected_count ?? 0);
+    const enabledSensors = sensors.length
+        ? sensors.filter((item) => Boolean(item?.enabled)).length
+        : Number(security?.sensors_enabled ?? 0);
+    const lines = [
+        panelTitle(
+            `${objectIcon({ icon: detail?.object_icon || detail?.object_type || "house" })} ${detail.name || `#${detail?.device_id || ""}`}`,
+            "Охрана",
+        ),
+        "",
+        `🔐 Режим: <b>${security?.armed ? "На охране" : "Снято"}</b>`,
+        `🚨 Тревога: ${security?.alarm ? "🔴" : "⚪"}`,
+        `🧩 Датчики: <b>${enabledSensors}</b>`,
+        `⚠️ Сработки: <b>${detectedCount}</b>`,
+    ];
+
+    const triggered = aggregatedTriggeredSensors(detail);
+    if (triggered.length) {
+        lines.push("");
+        lines.push(
+            triggered
+                .slice(0, 8)
+                .map((sensor) => {
+                    const id = Number(sensor?.id);
+                    const unitPrefix = sensor?._from_stack
+                        ? `${escapeHtml(sensor._unit_name || "Юнит")} · `
+                        : "";
+                    return `${sensorStateIcon(sensor)} ${unitPrefix}${itemName(sensor, `Датчик ${id}`)} · ${sensorTypeLabel(sensor)}`;
+                })
+                .join("\n"),
+        );
+    }
+
+    return lines;
+}
+
+function securitySensorsLines(detail, security) {
+    const sensors = securitySensors(detail);
+    const lines = [
+        panelTitle(
+            `${objectIcon({ icon: detail?.object_icon || detail?.object_type || "house" })} ${detail.name || `#${detail?.device_id || ""}`}`,
+            "Датчики",
+        ),
+        "",
+    ];
+    if (!sensors.length) {
+        lines.push("Датчики не найдены.");
+        return lines;
+    }
+    lines.push(
+        sensors
+            .map((sensor) => {
+                const id = Number(sensor?.id);
+                return `${sensorStateIcon(sensor)} ${itemName(sensor, `Датчик ${id}`)} · ${sensorTypeLabel(sensor)}`;
+            })
+            .join("\n"),
+    );
+    return lines;
+}
+
 export class TgSecurityMenu {
     constructor({ registry, devicesDb }) {
         this.registry = registry;
@@ -112,41 +231,9 @@ export class TgSecurityMenu {
             return;
         }
 
-        const sensors = Array.isArray(security?.sensors) ? security.sensors : [];
-        const detectedCount = sensors.length
-            ? sensors.filter((item) => Boolean(item?.detect)).length
-            : Number(security?.detected_count ?? 0);
-        const enabledSensors = sensors.length
-            ? sensors.filter((item) => Boolean(item?.enabled)).length
-            : Number(security?.sensors_enabled ?? 0);
-        const lines = [
-            panelTitle(
-                `${objectIcon({ icon: detail?.object_icon || detail?.object_type || "house" })} ${detail.name || `#${deviceId}`}`,
-                "Охрана",
-            ),
-            `🛡 Контур: ${security?.enabled ? "🟢" : "⚪"}`,
-            `🔐 Режим: <b>${security?.armed ? "На охране" : "Снято"}</b>`,
-            `🚨 Тревога: ${security?.alarm ? "🔴" : "⚪"}`,
-            `🧩 Датчики: <b>${enabledSensors}</b>`,
-            `⚠️ Сработки: <b>${detectedCount}</b>`,
-        ];
-
-        if (sensors.length) {
-            lines.push("");
-            lines.push(
-                sensors
-                    .slice(0, 8)
-                    .map((sensor) => {
-                        const id = Number(sensor?.id);
-                        return `${sensorStateIcon(sensor)} ${itemName(sensor, `Датчик ${id}`)} · ${sensorTypeLabel(sensor)}`;
-                    })
-                    .join("\n"),
-            );
-        }
-
         await replyMenu(
             ctx,
-            lines.join("\n"),
+            securityDetailLines(detail, security).join("\n"),
             this.buildItemKeyboard(
                 detail,
                 security,
@@ -272,6 +359,72 @@ export class TgSecurityMenu {
         });
     }
 
+    async openSensors(
+        ctx,
+        {
+            deviceId,
+            nodeId = null,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        },
+    ) {
+        const detail = await getScopedDetail(deviceId, nodeId, user);
+        const security =
+            detail?.controllers?.security &&
+            typeof detail.controllers.security === "object"
+                ? detail.controllers.security
+                : null;
+        if (!detail || !security) {
+            await replyMenu(
+                ctx,
+                "Охрана недоступна.",
+                this.buildBackKeyboard(
+                    Number(deviceId),
+                    Number(nodeId || 0),
+                    controllersCallbackData,
+                    mainMenuCallbackData,
+                ),
+            );
+            return;
+        }
+        await replyMenu(
+            ctx,
+            securitySensorsLines(detail, security).join("\n"),
+            this.buildSensorsKeyboard(
+                detail,
+                controllersCallbackData,
+                mainMenuCallbackData,
+            ),
+        );
+    }
+
+    async refreshSensors(
+        ctx,
+        {
+            deviceId,
+            nodeId = null,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        },
+    ) {
+        await ctx.answerCallbackQuery({ text: "Обновляю..." });
+        await this.openSensors(ctx, {
+            deviceId,
+            nodeId,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        });
+    }
+
     patchSecurity(detail, updater) {
         return {
             ...detail,
@@ -321,24 +474,9 @@ export class TgSecurityMenu {
                 ? detail.controllers.security
                 : null;
         if (!detail || !security) return;
-        const sensors = Array.isArray(security?.sensors) ? security.sensors : [];
-        const detectedCount = sensors.length
-            ? sensors.filter((item) => Boolean(item?.detect)).length
-            : Number(security?.detected_count ?? 0);
-        const enabledSensors = sensors.length
-            ? sensors.filter((item) => Boolean(item?.enabled)).length
-            : Number(security?.sensors_enabled ?? 0);
-        const lines = [
-            panelTitle(`🛡 Охрана`),
-            `🛡 Контур: ${security?.enabled ? "🟢" : "⚪"}`,
-            `🔐 Режим: <b>${security?.armed ? "На охране" : "Снято"}</b>`,
-            `🚨 Тревога: ${security?.alarm ? "🔴" : "⚪"}`,
-            `🧩 Датчики: <b>${enabledSensors}</b>`,
-            `⚠️ Сработки: <b>${detectedCount}</b>`,
-        ];
         await replyMenu(
             ctx,
-            lines.join("\n"),
+            securityDetailLines(detail, security).join("\n"),
             this.buildItemKeyboard(
                 detail,
                 security,
@@ -369,8 +507,25 @@ export class TgSecurityMenu {
             )
             .row();
         keyboard
+            .text("🧩 Датчики", this.sensorsCallbackData(deviceId, nodeId))
             .text("🔄 Обновить", this.refreshCallbackData(deviceId, nodeId))
+            .row();
+        keyboard
             .text("◀️ Назад", controllersCallbackData(deviceId, nodeId));
+        return keyboard;
+    }
+
+    buildSensorsKeyboard(
+        detail,
+        controllersCallbackData,
+        mainMenuCallbackData,
+    ) {
+        const keyboard = new InlineKeyboard();
+        const deviceId = Number(detail?.device_id);
+        const nodeId = Number(detail?.node_id || 0);
+        keyboard
+            .text("🔄 Обновить", this.sensorsRefreshCallbackData(deviceId, nodeId))
+            .text("◀️ Назад", this.controllerCallbackData(deviceId, nodeId));
         return keyboard;
     }
 
@@ -396,6 +551,14 @@ export class TgSecurityMenu {
 
     refreshCallbackData(deviceId, nodeId = 0) {
         return `menu:security:refresh:${Number(deviceId)}:${Number(nodeId || 0)}`;
+    }
+
+    sensorsCallbackData(deviceId, nodeId = 0) {
+        return `menu:security:sensors:${Number(deviceId)}:${Number(nodeId || 0)}`;
+    }
+
+    sensorsRefreshCallbackData(deviceId, nodeId = 0) {
+        return `menu:security:sensors_refresh:${Number(deviceId)}:${Number(nodeId || 0)}`;
     }
 
     delay(ms) {

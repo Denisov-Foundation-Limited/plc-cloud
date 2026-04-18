@@ -445,8 +445,12 @@
         "watering": [
             { "action": "status", "args": { "id": "u8", "state": "on|off" } },
             { "action": "weekdays", "args": { "id": "u8", "weekdays_mask": "u8" } },
+            { "action": "tank", "args": { "id": "u8", "tank_id": "u8" } },
+            { "action": "resume", "args": { "id": "u8", "enabled": "bool" } },
+            { "action": "resume_level", "args": { "id": "u8", "level": "u8" } },
             { "action": "time", "args": { "id": "u8", "slot": "u8", "hour": "u8", "minute": "u8" } },
-            { "action": "duration", "args": { "id": "u8", "slot": "u8", "duration_s": "u32" } }
+            { "action": "duration", "args": { "id": "u8", "slot": "u8", "duration_s": "u32" } },
+            { "action": "slot_enabled", "args": { "id": "u8", "slot": "u8", "enabled": "bool" } }
         ],
         "security": [
             { "action": "arm", "args": {} },

@@ -88,7 +88,7 @@ function controllerIcon(title) {
     if (key.includes("метео")) return "🌤";
     if (key.includes("термо")) return "♨️";
     if (key.includes("бак")) return "🛢";
-    if (key.includes("септик")) return "🚰";
+    if (key.includes("септик")) return "🚽";
     if (key.includes("полив")) return "💧";
     if (key.includes("камер")) return "📷";
     if (key.includes("охран")) return "🛡";
@@ -446,7 +446,7 @@ export class TelegramBotService {
             title =
                 reason === "alarm" || data.alarm
                     ? `🚨 Тревога септика <b>${escapeHtml(item)}</b>`
-                    : `🚰 Предупреждение септика <b>${escapeHtml(item)}</b>`;
+                    : `🚽 Предупреждение септика <b>${escapeHtml(item)}</b>`;
         } else if (kind === "security.arm") {
             title = `${data.armed ? "🔐" : "🔓"} Охрана ${data.armed ? "включена" : "снята"}`;
         } else if (kind === "security.alarm") {
@@ -1298,6 +1298,117 @@ export class TelegramBotService {
         );
 
         this.bot.callbackQuery(
+            new RegExp(`^menu:watering:tank:(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                await ctx.answerCallbackQuery();
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "open_watering_tank",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId}`,
+                );
+                await this.wateringMenu.openTankEditor(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:watering:tank_set:(\\d+):(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                const tankId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[4] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "watering_tank_set",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId} tank_id: ${tankId}`,
+                );
+                await this.wateringMenu.assignTank(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    tankId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:watering:resume_level:(\\d+):(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                const level = Number(
+                    Array.isArray(ctx.match) ? ctx.match[4] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "watering_resume_level_set",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId} level: ${level}`,
+                );
+                await this.wateringMenu.setResumeLevel(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    level,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
             new RegExp(`^menu:watering:status:(\\d+):(\\d+):(\\d+)$`),
             async (ctx) => {
                 const user = await this.requireLinkedUser(ctx);
@@ -1462,6 +1573,46 @@ export class TelegramBotService {
         );
 
         this.bot.callbackQuery(
+            new RegExp(
+                `^menu:watering:slot_enabled:(\\d+):(\\d+):(\\d+):(\\d+)$`,
+            ),
+            async (ctx) => {
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                const slot = Number(
+                    Array.isArray(ctx.match) ? ctx.match[4] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "watering_slot_enabled_toggle",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId} slot: ${slot}`,
+                );
+                await this.wateringMenu.toggleSlotEnabled(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    slot,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
             new RegExp(`^menu:septic:view:(\\d+):(\\d+):(\\d+)$`),
             async (ctx) => {
                 await ctx.answerCallbackQuery();
@@ -1524,6 +1675,40 @@ export class TelegramBotService {
                     `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId}`,
                 );
                 await this.septicMenu.toggleMonitor(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:septic:refresh:(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "septic_refresh",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId}`,
+                );
+                await this.septicMenu.refreshItem(ctx, {
                     deviceId,
                     nodeId: nodeId > 0 ? nodeId : null,
                     itemId,
@@ -2891,6 +3076,7 @@ export class TelegramBotService {
             "meteo",
             "thermo",
             "tanks",
+            "watering",
             "leak",
             "sockets",
             "lights",
@@ -3254,6 +3440,50 @@ export class TelegramBotService {
             }
         }
         {
+            const match = value.match(/^menu:security:sensors:(\d+):(\d+)$/);
+            if (match) {
+                await this.securityMenu.openSensors(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    user,
+                    getScopedDetail: (nextDeviceId, nextNodeId, nextUser) =>
+                        this.getScopedTelegramControllerDetail(
+                            nextDeviceId,
+                            nextNodeId,
+                            nextUser,
+                            "security",
+                        ),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:security:sensors_refresh:(\d+):(\d+)$/);
+            if (match) {
+                await this.securityMenu.refreshSensors(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    user,
+                    getScopedDetail: (nextDeviceId, nextNodeId, nextUser) =>
+                        this.getScopedTelegramControllerDetail(
+                            nextDeviceId,
+                            nextNodeId,
+                            nextUser,
+                            "security",
+                        ),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+                return true;
+            }
+        }
+        {
             const match = value.match(/^menu:tanks:view:(\d+):(\d+):(\d+)$/);
             if (match) {
                 const deviceId = Number(match[1]);
@@ -3355,6 +3585,18 @@ export class TelegramBotService {
             }
         }
         {
+            const match = value.match(/^menu:septic:refresh:(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.septicMenu.refreshItem(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
             const match = value.match(/^menu:watering:view:(\d+):(\d+):(\d+)$/);
             if (match) {
                 const deviceId = Number(match[1]);
@@ -3421,6 +3663,57 @@ export class TelegramBotService {
                     node_id: Number(nodeId || 0),
                     item_id: itemId,
                     slot,
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:watering:tank:(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.wateringMenu.openTankEditor(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:watering:tank_set:(\d+):(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.wateringMenu.assignTank(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    tankId: Number(match[4]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:watering:resume_level:(\d+):(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.wateringMenu.setResumeLevel(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    level: Number(match[4]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:watering:slot_enabled:(\d+):(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.wateringMenu.toggleSlotEnabled(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    slot: Number(match[4]),
+                    ...this.controllerMenuOptions(user),
                 });
                 return true;
             }
@@ -3839,7 +4132,7 @@ export class TelegramBotService {
             });
         if (hasSeptic)
             controllerButtons.push({
-                label: "🚰 Септик",
+                label: "🚽 Септик",
                 data: this.septicMenu.controllerCallbackData(deviceId, nodeId),
             });
         if (hasWatering)

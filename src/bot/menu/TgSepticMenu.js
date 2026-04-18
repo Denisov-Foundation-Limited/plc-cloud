@@ -32,6 +32,17 @@ function panelDivider() {
     return "━━━━━━━━━━━━━━━━━";
 }
 
+function objectIcon(objectItem) {
+    const kind = String(
+        typeof objectItem === "string" ? "house" : objectItem?.icon || "house",
+    ).toLowerCase();
+    if (kind === "apartment") return "🏢";
+    if (kind === "dacha") return "🏡";
+    if (kind === "garage") return "🚗";
+    if (kind === "garden") return "🌿";
+    return "🏠";
+}
+
 function itemName(item, fallback) {
     const raw = String(item?.name || fallback).trim();
     return raw || fallback;
@@ -42,9 +53,9 @@ function monitorOn(item) {
 }
 
 function levelLabel(item) {
-    if (item?.alarm) return "авария";
+    if (item?.alarm) return "полный";
     if (item?.warning) return "предупреждение";
-    return "норма";
+    return "пустой";
 }
 
 function levelIcon(item) {
@@ -53,10 +64,17 @@ function levelIcon(item) {
     return "🟢";
 }
 
+function stateIcon(item) {
+    if (!monitorOn(item)) return "⚪";
+    if (item?.alarm) return "🔴";
+    if (item?.warning) return "🟠";
+    return "🟢";
+}
+
 function buttonLabel(item, fallback) {
     const raw = itemName(item, fallback);
     const short = raw.length > 14 ? `${raw.slice(0, 14)}…` : raw;
-    return `${levelIcon(item)} ${short}`;
+    return `🚽 ${short}`;
 }
 
 export class TgSepticMenu {
@@ -82,7 +100,12 @@ export class TgSepticMenu {
             controllersCallbackData,
         },
     ) {
-        const detail = await getScopedDetail(deviceId, nodeId, user);
+        const detail = await this.waitForSepticDetail(
+            deviceId,
+            nodeId,
+            user,
+            getScopedDetail,
+        );
         if (!detail) {
             await replyMenu(
                 ctx,
@@ -98,6 +121,34 @@ export class TgSepticMenu {
         }
         const list = this.list(detail);
         if (!list.length) {
+            const summary =
+                !Array.isArray(detail?.controllers?.septic) &&
+                detail?.controllers?.septic &&
+                typeof detail.controllers.septic === "object"
+                    ? detail.controllers.septic
+                    : null;
+            if (summary && Number(summary?.enabled_count ?? summary?.enabled ?? 0) > 0) {
+                await replyMenu(
+                    ctx,
+                    [
+                        panelTitle(
+                            `${objectIcon({ icon: detail?.object_icon || detail?.object_type || "house" })} ${detail.name || `#${deviceId}`}`,
+                            "Септик",
+                        ),
+                        `🚽 Септиков: <b>${Number(summary?.enabled_count ?? summary?.enabled ?? 0)}</b>`,
+                        `🟠 Предупреждения: <b>${summary?.warning ? 1 : 0}</b>`,
+                        `🔴 Аварии: <b>${summary?.alarm ? 1 : 0}</b>`,
+                        "Подробные данные септика со слейва ещё не догружены.",
+                    ].join("\n"),
+                    this.buildBackKeyboard(
+                        deviceId,
+                        nodeId,
+                        controllersCallbackData,
+                        mainMenuCallbackData,
+                    ),
+                );
+                return;
+            }
             await replyMenu(
                 ctx,
                 detail?._controller_loading === "septic"
@@ -113,20 +164,22 @@ export class TgSepticMenu {
             return;
         }
         const alarms = list.filter((item) => Boolean(item?.alarm)).length;
-        const warnings = list.filter((item) => Boolean(item?.warning)).length;
         const lines = list.map((item) => {
             const id = Number(item?.id);
             return [
-                `${levelIcon(item)} ${itemName(item, `Септик ${id}`)}`,
-                `   Уровень: ${levelLabel(item)}  ·  Мониторинг: ${monitorOn(item) ? "ВКЛ" : "ВЫКЛ"}`,
+                `🚽 ${itemName(item, `Септик ${id}`)}`,
+                `    🔌 Питание: ${monitorOn(item) ? "🟢" : "⚪"} / 📟 Статус: ${stateIcon(item)}`,
             ].join("\n");
         });
         await replyMenu(
             ctx,
             [
-                panelTitle(`🚰 ${detail.name || `#${deviceId}`}`, "Септик"),
+                panelTitle(
+                    `${objectIcon({ icon: detail?.object_icon || detail?.object_type || "house" })} ${detail.name || `#${deviceId}`}`,
+                    "Септик",
+                ),
                 lines.map(escapeHtml).join("\n\n"),
-                `${panelDivider()}\nВсего: ${list.length}   Предупреждения: ${warnings}   Аварии: ${alarms}`,
+                `${panelDivider()}\nВсего: ${list.length}   Аварии: ${alarms}`,
             ].join("\n\n"),
             this.buildKeyboard(
                 detail,
@@ -149,7 +202,12 @@ export class TgSepticMenu {
             controllersCallbackData,
         },
     ) {
-        const detail = await getScopedDetail(deviceId, nodeId, user);
+        const detail = await this.waitForSepticDetail(
+            deviceId,
+            nodeId,
+            user,
+            getScopedDetail,
+        );
         if (!detail) {
             await replyMenu(
                 ctx,
@@ -179,14 +237,11 @@ export class TgSepticMenu {
         }
         const id = Number(item?.id);
         const lines = [
-            panelTitle(
-                `🚰 ${itemName(item, `Септик ${id}`)}`,
-                `${detail.name || `#${deviceId}`}`,
-            ),
-            `${levelIcon(item)} Уровень: <b>${escapeHtml(levelLabel(item))}</b>`,
-            `${monitorOn(item) ? "🟢" : "⚪"} Мониторинг: <b>${monitorOn(item) ? "ВКЛ" : "ВЫКЛ"}</b>`,
-            `${item?.warning ? "🟠" : "⚪"} Предупреждение: <b>${item?.warning ? "ДА" : "НЕТ"}</b>`,
-            `${item?.alarm ? "🔴" : "⚪"} Авария: <b>${item?.alarm ? "ДА" : "НЕТ"}</b>`,
+            panelTitle(`🚽 ${itemName(item, `Септик ${id}`)}`),
+            "",
+            `🔌 Питание: ${monitorOn(item) ? "🟢" : "⚪"}`,
+            `📟 Статус: ${stateIcon(item)}`,
+            `🚨 Авария: ${item?.alarm ? "🔴" : "⚪"}`,
         ];
         await replyMenu(
             ctx,
@@ -213,7 +268,12 @@ export class TgSepticMenu {
             controllersCallbackData,
         },
     ) {
-        const detail = await getScopedDetail(deviceId, nodeId, user);
+        const detail = await this.waitForSepticDetail(
+            deviceId,
+            nodeId,
+            user,
+            getScopedDetail,
+        );
         const item = this.findItem(detail, itemId);
         if (!detail || !item) {
             await ctx.answerCallbackQuery({
@@ -269,7 +329,7 @@ export class TgSepticMenu {
             nodeId || undefined,
         );
         await ctx.answerCallbackQuery({
-            text: nextState === "on" ? "Мониторинг включаю..." : "Мониторинг выключаю...",
+            text: nextState === "on" ? "Питание включаю..." : "Питание выключаю...",
         });
         await this.replyPatchedItem(
             ctx,
@@ -280,6 +340,34 @@ export class TgSepticMenu {
             mainMenuCallbackData,
             controllersCallbackData,
         );
+    }
+
+    async refreshItem(
+        ctx,
+        {
+            deviceId,
+            nodeId = null,
+            itemId,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        },
+    ) {
+        await ctx.answerCallbackQuery({
+            text: "Обновляю...",
+        });
+        await this.openItem(ctx, {
+            deviceId,
+            nodeId,
+            itemId,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        });
     }
 
     findItem(detail, itemId) {
@@ -345,14 +433,11 @@ export class TgSepticMenu {
         if (!item) return;
         const id = Number(item?.id);
         const lines = [
-            panelTitle(
-                `🚰 ${itemName(item, `Септик ${id}`)}`,
-                `${patched.name || `#${patched.device_id}`}`,
-            ),
-            `${levelIcon(item)} Уровень: <b>${escapeHtml(levelLabel(item))}</b>`,
-            `${monitorOn(item) ? "🟢" : "⚪"} Мониторинг: <b>${monitorOn(item) ? "ВКЛ" : "ВЫКЛ"}</b>`,
-            `${item?.warning ? "🟠" : "⚪"} Предупреждение: <b>${item?.warning ? "ДА" : "НЕТ"}</b>`,
-            `${item?.alarm ? "🔴" : "⚪"} Авария: <b>${item?.alarm ? "ДА" : "НЕТ"}</b>`,
+            panelTitle(`🚽 ${itemName(item, `Септик ${id}`)}`),
+            "",
+            `🔌 Питание: ${monitorOn(item) ? "🟢" : "⚪"}`,
+            `📟 Статус: ${stateIcon(item)}`,
+            `🚨 Авария: ${item?.alarm ? "🔴" : "⚪"}`,
         ];
         await replyMenu(
             ctx,
@@ -363,7 +448,31 @@ export class TgSepticMenu {
                 controllersCallbackData,
                 mainMenuCallbackData,
             ),
+            { force_new_message: true },
         );
+    }
+
+    async waitForSepticDetail(deviceId, nodeId, user, getScopedDetail) {
+        let detail = await getScopedDetail(deviceId, nodeId, user);
+        const hasSeptic = (value) => this.list(value).length > 0;
+        if (hasSeptic(detail) || !nodeId || !this.deviceWs) {
+            return detail;
+        }
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < 8000) {
+            this.deviceWs.sendGet(
+                Number(deviceId),
+                ["system", "controllers"],
+                "stack",
+                nodeId || undefined,
+            );
+            await this.delay(250);
+            detail = await getScopedDetail(deviceId, nodeId, user);
+            if (hasSeptic(detail)) {
+                return detail;
+            }
+        }
+        return detail;
     }
 
     buildKeyboard(detail, controllersCallbackData, mainMenuCallbackData) {
@@ -404,20 +513,16 @@ export class TgSepticMenu {
         const itemId = Number(item?.id);
         keyboard
             .text(
-                monitorOn(item)
-                    ? "⏻ Выключить мониторинг"
-                    : "⏻ Включить мониторинг",
+                `${monitorOn(item) ? "🟢" : "⚪"} Питание`,
                 this.monitorCallbackData(deviceId, nodeId, itemId),
             )
             .row();
         keyboard
             .text(
-                "🚰 К списку септика",
-                this.controllerCallbackData(deviceId, nodeId),
+                "🔄 Обновить",
+                this.refreshCallbackData(deviceId, nodeId, itemId),
             )
-            .row();
-        keyboard
-            .text("◀️ Назад", controllersCallbackData(deviceId, nodeId));
+            .text("◀️ Назад", this.controllerCallbackData(deviceId, nodeId));
         return keyboard;
     }
 
@@ -443,6 +548,10 @@ export class TgSepticMenu {
 
     monitorCallbackData(deviceId, nodeId = 0, itemId) {
         return `menu:septic:monitor:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}`;
+    }
+
+    refreshCallbackData(deviceId, nodeId = 0, itemId) {
+        return `menu:septic:refresh:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}`;
     }
 
     delay(ms) {

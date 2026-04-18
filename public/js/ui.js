@@ -148,6 +148,8 @@ function wateringDurationLabel(seconds) {
 }
 
 function wateringSlotConfigured(slot) {
+    const enabled = Boolean(slot?.enabled);
+    if (!enabled) return false;
     const hour = Number(slot?.hour);
     const minute = Number(slot?.minute);
     const durationS = Number(slot?.duration_s);
@@ -1978,7 +1980,9 @@ export class Ui {
         const list = asArray(detail?.controllers?.watering);
         if (!list.length) {
             this.deviceWateringGrid.innerHTML = this.renderEmptyState(
-                "Нет данных по поливу",
+                stackControllerPending(detail, "watering")
+                    ? "Идёт загрузка правил полива со слейва"
+                    : "Нет данных по поливу",
             );
             return;
         }
@@ -2036,18 +2040,21 @@ export class Ui {
                 const slots = [
                     {
                         slot: 1,
+                        enabled: Boolean(item?.slot1_enabled),
                         hour: Number(item?.hour),
                         minute: Number(item?.minute),
                         duration_s: Number(item?.duration_s),
                     },
                     {
                         slot: 2,
+                        enabled: Boolean(item?.slot2_enabled),
                         hour: Number(item?.hour2),
                         minute: Number(item?.minute2),
                         duration_s: Number(item?.duration2_s),
                     },
                     {
                         slot: 3,
+                        enabled: Boolean(item?.slot3_enabled),
                         hour: Number(item?.hour3),
                         minute: Number(item?.minute3),
                         duration_s: Number(item?.duration3_s),
@@ -2092,6 +2099,7 @@ export class Ui {
               <div
                 class="watering-slot-card ${configured ? "is-configured" : ""}"
                 data-watering-slot="${slot.slot}"
+                data-enabled="${slot.enabled ? "1" : "0"}"
                 data-hour="${Number.isFinite(slot.hour) ? slot.hour : 0}"
                 data-minute="${Number.isFinite(slot.minute) ? slot.minute : 0}"
                 data-duration-s="${Number.isFinite(slot.duration_s) ? slot.duration_s : 0}"
@@ -2100,7 +2108,9 @@ export class Ui {
                   <span class="watering-slot-title">Слот ${slot.slot}</span>
                   <span class="watering-slot-value">${esc(timeText)} · ${esc(durationText)}</span>
                 </div>
-                <div class="watering-slot-state">${configured ? "Настроен" : "Не задан"}</div>
+                <div class="watering-slot-state">${
+                    slot.enabled ? (configured ? "Настроен" : "Включён") : "Отключен"
+                }</div>
                 <div class="watering-slot-editor">
                   <label class="watering-slot-time">
                     <span class="watering-slot-caption">Время старта</span>
@@ -2116,6 +2126,7 @@ export class Ui {
                   </label>
                 </div>
                 <div class="watering-slot-actions">
+                  <button class="ghost btn-sm watering-enable-btn" type="button" data-action="slot-enabled-toggle" data-slot="${slot.slot}" ${enabled && writable ? "" : "disabled"}>${slot.enabled ? "🟢 Слот" : "⚪ Слот"}</button>
                   <button class="ghost btn-sm watering-save-btn" type="button" data-action="slot-save" data-slot="${slot.slot}" ${enabled && writable ? "" : "disabled"}>Сохранить слот</button>
                 </div>
                 <div class="watering-slot-copy-row">

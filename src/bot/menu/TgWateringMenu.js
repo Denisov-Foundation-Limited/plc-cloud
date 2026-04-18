@@ -47,16 +47,51 @@ function itemName(item, fallback) {
 }
 
 function wateringIcon(item) {
+    if (!item?.status) return "⚪";
     if (item?.active) return "🟢";
-    if (item?.paused) return "⏸";
-    if (item?.enabled) return "💧";
+    if (item?.paused) return "⏸💧";
+    if (item?.status) return "⏸⏰";
     return "⚪";
+}
+
+function wateringStatusIcon(item) {
+    if (!item?.status) return "⚪";
+    if (item?.active) return "🟢";
+    if (item?.paused) return "⏸💧";
+    return "⏸⏰";
+}
+
+function wateringStatusLabel(item) {
+    if (!item?.status) return "выкл";
+    if (item?.active) return "активен";
+    if (item?.paused) return "ожидание бака";
+    return "ожидание времени";
+}
+
+function wateringPowerLabel(item) {
+    return item?.status ? "🟢" : "⚪";
+}
+
+function slotIndicator(enabled) {
+    return enabled ? "🟢" : "⚪";
+}
+
+function wateringTitle(item, fallback) {
+    return `💧 ${itemName(item, fallback)}`;
+}
+
+function slotLine(item, slot = 1, durationField) {
+    return `⏰ Слот ${slot}: <b>${slotIndicator(slotInfo(item, slot).enabled)}</b> · <b>${escapeHtml(slotTimeLabel(item, slot))}</b> · <b>${escapeHtml(durationLabel(durationField))}</b>`;
+}
+
+function slotPresent(item, slot = 1, durationField) {
+    return Number.isInteger(Number(slotInfo(item, slot).hour)) || Number(durationField) > 0;
 }
 
 function buttonLabel(item, fallback) {
     const raw = itemName(item, fallback);
     const short = raw.length > 14 ? `${raw.slice(0, 14)}…` : raw;
-    return `${wateringIcon(item)} ${short}`;
+    return `💧 ${short}`;
 }
 
 function scheduleTime(item) {
@@ -79,6 +114,7 @@ function slotInfo(item, slot = 1) {
     const safeSlot = Math.max(1, Math.min(3, Number(slot) || 1));
     if (safeSlot === 2) {
         return {
+            enabled: Boolean(item?.slot2_enabled),
             hour: Number(item?.hour2),
             minute: Number(item?.minute2),
             duration_s: Number(item?.duration2_s),
@@ -86,12 +122,14 @@ function slotInfo(item, slot = 1) {
     }
     if (safeSlot === 3) {
         return {
+            enabled: Boolean(item?.slot3_enabled),
             hour: Number(item?.hour3),
             minute: Number(item?.minute3),
             duration_s: Number(item?.duration3_s),
         };
     }
     return {
+        enabled: Boolean(item?.slot1_enabled),
         hour: Number(item?.hour),
         minute: Number(item?.minute),
         duration_s: Number(item?.duration_s),
@@ -143,23 +181,59 @@ function tankLabel(item) {
     return Number.isFinite(id) && id > 0 ? `Бак #${id}` : "не привязан";
 }
 
+function resumeLevelPercent(item) {
+    const level = Number(item?.resume_level);
+    if (level >= 2) return "99%";
+    if (level >= 1) return "66%";
+    return "33%";
+}
+
+function tankBindLabel(item) {
+    if (!Number(item?.tank)) return "не привязан";
+    return `${tankLabel(item)} · ${item?.resume ? resumeLevelPercent(item) : "без автовозобновления"}`;
+}
+
 function slotSummary(item) {
     const parts = [];
     for (const slot of [1, 2, 3]) {
         const info = slotInfo(item, slot);
+        if (!info.enabled) continue;
         const validTime = slotTimeLabel(item, slot);
         if (validTime === "--:--" && (!Number.isFinite(info.duration_s) || info.duration_s <= 0)) {
             continue;
         }
         parts.push(`${slot}:${validTime}`);
     }
-    return parts.length ? parts.join(" · ") : "слоты не заданы";
+    return parts.length ? parts.join(", ") : "слоты не заданы";
 }
 
 function clampTimePart(value, min, max) {
     const num = Number(value);
     if (!Number.isFinite(num)) return min;
     return Math.max(min, Math.min(max, Math.trunc(num)));
+}
+
+function itemDetailLines(item) {
+    const id = Number(item?.id);
+    const mask = weekdaysMask(item);
+    return [
+        panelTitle(`💧 ${itemName(item, `Полив ${id}`)}`),
+        `🔌 Питание: <b>${wateringPowerLabel(item)}</b>`,
+        `📟 Статус: <b>${wateringStatusIcon(item)}</b>`,
+        `🛢 Бак: <b>${escapeHtml(tankLabel(item))}</b>`,
+        `📅 Дни: <b>${escapeHtml(weekdaysLabel(mask))}</b>`,
+        slotLine(item, 1, item?.duration_s),
+        `${
+            slotPresent(item, 2, item?.duration2_s)
+                ? slotLine(item, 2, item?.duration2_s)
+                : ""
+        }`,
+        `${
+            slotPresent(item, 3, item?.duration3_s)
+                ? slotLine(item, 3, item?.duration3_s)
+                : ""
+        }`,
+    ].filter(Boolean);
 }
 
 export class TgWateringMenu {
@@ -216,7 +290,7 @@ export class TgWateringMenu {
                         panelTitle(`💧 ${detail.name || `#${deviceId}`}`, "Полив"),
                         `📋 Правил: <b>${Number(summary?.enabled_count ?? 0)}</b>`,
                         `📟 Активно: <b>${Number(summary?.active_count ?? 0)}</b>`,
-                        "Подробные правила для stack-полива пока не загружены в облако.",
+                        "Данные правил со слейва ещё загружаются.",
                     ].join("\n"),
                     this.buildBackKeyboard(
                         deviceId,
@@ -246,9 +320,10 @@ export class TgWateringMenu {
             const id = Number(item?.id);
             const mask = weekdaysMask(item);
             return [
-                `${wateringIcon(item)} ${itemName(item, `Полив ${id}`)}`,
-                `   ⏰ ${slotSummary(item)}  ·  📅 ${weekdaysLabel(mask)}`,
-                `   🛢 ${tankLabel(item)}`,
+                wateringTitle(item, `Полив ${id}`),
+                `    📟 ${wateringStatusIcon(item)}`,
+                `    📅 ${weekdaysLabel(mask)}`,
+                `    ⏰ ${slotSummary(item)}`,
             ].join("\n");
         });
         await replyMenu(
@@ -307,45 +382,219 @@ export class TgWateringMenu {
             );
             return;
         }
-        const id = Number(item?.id);
-        const mask = weekdaysMask(item);
-        const lines = [
-            panelTitle(
-                `💧 ${itemName(item, `Полив ${id}`)}`,
-                `${detail.name || `#${deviceId}`}`,
-            ),
-            `${item?.enabled ? "🟢" : "⚪"} Контур: <b>${item?.enabled ? "ВКЛ" : "ВЫКЛ"}</b>`,
-            `${item?.active ? "🟢" : "⚪"} Статус: <b>${item?.active ? "Активен" : "Остановлен"}</b>`,
-            `${item?.paused ? "⏸" : "⚪"} Пауза: <b>${item?.paused ? "ДА" : "НЕТ"}</b>`,
-            `🛢 Бак: <b>${escapeHtml(tankLabel(item))}</b>`,
-            `⏰ Слот 1: <b>${escapeHtml(slotTimeLabel(item, 1))}</b> · <b>${escapeHtml(durationLabel(item?.duration_s))}</b>`,
-            `📅 Дни: <b>${escapeHtml(weekdaysLabel(mask))}</b>`,
-            `${
-                Number.isInteger(Number(item?.hour2)) ||
-                Number(item?.duration2_s) > 0
-                    ? `⏰ Слот 2: <b>${escapeHtml(
-                          slotTimeLabel(item, 2),
-                      )}</b> · <b>${escapeHtml(durationLabel(item?.duration2_s))}</b>`
-                    : ""
-            }`,
-            `${
-                Number.isInteger(Number(item?.hour3)) ||
-                Number(item?.duration3_s) > 0
-                    ? `⏰ Слот 3: <b>${escapeHtml(
-                          slotTimeLabel(item, 3),
-                      )}</b> · <b>${escapeHtml(durationLabel(item?.duration3_s))}</b>`
-                    : ""
-            }`,
-        ].filter(Boolean);
         await replyMenu(
             ctx,
-            lines.join("\n"),
+            itemDetailLines(item).join("\n"),
             this.buildItemKeyboard(
                 detail,
                 item,
                 controllersCallbackData,
                 mainMenuCallbackData,
             ),
+        );
+    }
+
+    async openTankEditor(
+        ctx,
+        {
+            deviceId,
+            nodeId = null,
+            itemId,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        },
+    ) {
+        const detail = await getScopedDetail(deviceId, nodeId, user);
+        if (!detail) {
+            await replyMenu(
+                ctx,
+                "Устройство недоступно.",
+                this.buildBackKeyboard(
+                    Number(deviceId),
+                    Number(nodeId || 0),
+                    controllersCallbackData,
+                    mainMenuCallbackData,
+                ),
+            );
+            return;
+        }
+        const item = this.findItem(detail, itemId);
+        if (!item) {
+            await replyMenu(
+                ctx,
+                "Правило полива не найдено.",
+                this.buildBackKeyboard(
+                    deviceId,
+                    nodeId,
+                    controllersCallbackData,
+                    mainMenuCallbackData,
+                ),
+            );
+            return;
+        }
+        const lines = [
+            panelTitle(
+                `💧 ${itemName(item, `Полив ${Number(item?.id)}`)}`,
+                "Бак",
+            ),
+            "",
+            `🛢 Бак: <b>${escapeHtml(tankLabel(item))}</b>`,
+            `💧 Возобновление: <b>${Number(item?.tank) > 0 && item?.resume ? resumeLevelPercent(item) : "выкл"}</b>`,
+        ];
+        await replyMenu(
+            ctx,
+            lines.join("\n"),
+            this.buildTankKeyboard(
+                detail,
+                item,
+                controllersCallbackData,
+                mainMenuCallbackData,
+            ),
+        );
+    }
+
+    async assignTank(
+        ctx,
+        {
+            deviceId,
+            nodeId = null,
+            itemId,
+            tankId = 0,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        },
+    ) {
+        const detail = await getScopedDetail(deviceId, nodeId, user);
+        const item = this.findItem(detail, itemId);
+        if (!detail || !item) {
+            await ctx.answerCallbackQuery({
+                text: "Полив недоступен",
+                show_alert: true,
+            });
+            return;
+        }
+        const ok = await this.sendCommand({
+            deviceId,
+            nodeId,
+            user,
+            action: "tank",
+            args: { id: Number(itemId), tank_id: Math.max(0, Number(tankId) || 0) },
+        });
+        if (!ok) {
+            await ctx.answerCallbackQuery({
+                text: "Нет прав или устройство оффлайн",
+                show_alert: true,
+            });
+            return;
+        }
+        if (Number(tankId) > 0) {
+            await this.sendCommand({
+                deviceId,
+                nodeId,
+                user,
+                action: "resume",
+                args: { id: Number(itemId), enabled: true },
+            });
+        } else {
+            await this.sendCommand({
+                deviceId,
+                nodeId,
+                user,
+                action: "resume",
+                args: { id: Number(itemId), enabled: false },
+            });
+        }
+        await ctx.answerCallbackQuery({
+            text: Number(tankId) > 0 ? "Бак привязан" : "Бак отвязан",
+        });
+        await this.replyPatchedTankEditor(
+            ctx,
+            detail,
+            itemId,
+            (current) => ({
+                ...current,
+                tank: Number(tankId) > 0 ? Number(tankId) : 0,
+                tank_name:
+                    Number(tankId) > 0
+                        ? this.findTank(detail, Number(tankId))?.name || current?.tank_name || ""
+                        : "",
+                resume: Number(tankId) > 0 ? true : false,
+                paused: Number(tankId) > 0 ? current?.paused : false,
+            }),
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        );
+    }
+
+    async setResumeLevel(
+        ctx,
+        {
+            deviceId,
+            nodeId = null,
+            itemId,
+            level = 0,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        },
+    ) {
+        const detail = await getScopedDetail(deviceId, nodeId, user);
+        const item = this.findItem(detail, itemId);
+        if (!detail || !item) {
+            await ctx.answerCallbackQuery({
+                text: "Полив недоступен",
+                show_alert: true,
+            });
+            return;
+        }
+        const safeLevel = Math.max(0, Math.min(2, Number(level) || 0));
+        const okLevel = await this.sendCommand({
+            deviceId,
+            nodeId,
+            user,
+            action: "resume_level",
+            args: { id: Number(itemId), level: safeLevel },
+        });
+        const okResume = okLevel
+            ? await this.sendCommand({
+                  deviceId,
+                  nodeId,
+                  user,
+                  action: "resume",
+                  args: { id: Number(itemId), enabled: Number(item?.tank) > 0 },
+              })
+            : false;
+        if (!okLevel || !okResume) {
+            await ctx.answerCallbackQuery({
+                text: "Нет прав или устройство оффлайн",
+                show_alert: true,
+            });
+            return;
+        }
+        await ctx.answerCallbackQuery({
+            text: `Возобновление: ${safeLevel >= 2 ? "99%" : safeLevel >= 1 ? "66%" : "33%"}`,
+        });
+        await this.replyPatchedTankEditor(
+            ctx,
+            detail,
+            itemId,
+            (current) => ({
+                ...current,
+                resume_level: safeLevel,
+                resume: Number(current?.tank) > 0,
+            }),
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
         );
     }
 
@@ -371,7 +620,7 @@ export class TgWateringMenu {
             });
             return;
         }
-        const nextState = item?.active ? "off" : "on";
+        const nextState = item?.status ? "off" : "on";
         const ok = await this.sendCommand({
             deviceId,
             nodeId,
@@ -387,7 +636,7 @@ export class TgWateringMenu {
             return;
         }
         await ctx.answerCallbackQuery({
-            text: nextState === "on" ? "Полив включаю..." : "Полив выключаю...",
+            text: nextState === "on" ? "Питание включаю..." : "Питание выключаю...",
         });
         await this.replyPatchedItem(
             ctx,
@@ -395,8 +644,9 @@ export class TgWateringMenu {
             itemId,
             (current) => ({
                 ...current,
-                active: nextState === "on",
-                enabled: nextState === "on" ? true : current?.enabled,
+                status: nextState === "on",
+                active: nextState === "on" ? current?.active : false,
+                paused: nextState === "on" ? current?.paused : false,
             }),
             replyMenu,
             mainMenuCallbackData,
@@ -604,6 +854,67 @@ export class TgWateringMenu {
         );
     }
 
+    async toggleSlotEnabled(
+        ctx,
+        {
+            deviceId,
+            nodeId = null,
+            itemId,
+            slot = 1,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        },
+    ) {
+        const detail = await getScopedDetail(deviceId, nodeId, user);
+        const item = this.findItem(detail, itemId);
+        if (!detail || !item) {
+            await ctx.answerCallbackQuery({
+                text: "Полив недоступен",
+                show_alert: true,
+            });
+            return;
+        }
+        const safeSlot = clampTimePart(slot, 1, 3);
+        const current = slotInfo(item, safeSlot);
+        const nextEnabled = !current.enabled;
+        const ok = await this.sendCommand({
+            deviceId,
+            nodeId,
+            user,
+            action: "slot_enabled",
+            args: {
+                id: Number(itemId),
+                slot: safeSlot,
+                enabled: nextEnabled,
+            },
+        });
+        if (!ok) {
+            await ctx.answerCallbackQuery({
+                text: "Нет прав или устройство оффлайн",
+                show_alert: true,
+            });
+            return;
+        }
+        await ctx.answerCallbackQuery({
+            text: nextEnabled ? `Слот ${safeSlot} включён` : `Слот ${safeSlot} выключен`,
+        });
+        await this.replyPatchedSlotEditor(
+            ctx,
+            detail,
+            itemId,
+            safeSlot,
+            (currentItem) => this.patchSlot(currentItem, safeSlot, {
+                enabled: nextEnabled,
+            }),
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        );
+    }
+
     async openSlotEditor(
         ctx,
         {
@@ -654,6 +965,7 @@ export class TgWateringMenu {
                 `Слот ${safeSlot} · ${detail.name || `#${deviceId}`}`,
             ),
             `🛢 Бак: <b>${escapeHtml(tankLabel(item))}</b>`,
+            `⚙️ Слот: <b>${info.enabled ? "ВКЛ" : "ВЫКЛ"}</b>`,
             `⏰ Время: <b>${escapeHtml(slotTimeLabel(item, safeSlot))}</b>`,
             `⌛ Длительность: <b>${escapeHtml(durationLabel(info.duration_s))}</b>`,
             `📅 Дни: <b>${escapeHtml(weekdaysLabel(weekdaysMask(item)))}</b>`,
@@ -720,6 +1032,13 @@ export class TgWateringMenu {
         return list.find((item) => Number(item?.id) === Number(itemId)) || null;
     }
 
+    findTank(detail, tankId) {
+        const list = Array.isArray(detail?.controllers?.tanks)
+            ? detail.controllers.tanks
+            : [];
+        return list.find((item) => Number(item?.id) === Number(tankId)) || null;
+    }
+
     patchItem(detail, itemId, updater) {
         return {
             ...detail,
@@ -740,17 +1059,20 @@ export class TgWateringMenu {
         const safeSlot = clampTimePart(slot, 1, 3);
         const next = { ...item };
         if (safeSlot === 2) {
+            if (values.enabled !== undefined) next.slot2_enabled = Boolean(values.enabled);
             if (values.hour !== undefined) next.hour2 = values.hour;
             if (values.minute !== undefined) next.minute2 = values.minute;
             if (values.duration_s !== undefined) next.duration2_s = values.duration_s;
             return next;
         }
         if (safeSlot === 3) {
+            if (values.enabled !== undefined) next.slot3_enabled = Boolean(values.enabled);
             if (values.hour !== undefined) next.hour3 = values.hour;
             if (values.minute !== undefined) next.minute3 = values.minute;
             if (values.duration_s !== undefined) next.duration3_s = values.duration_s;
             return next;
         }
+        if (values.enabled !== undefined) next.slot1_enabled = Boolean(values.enabled);
         if (values.hour !== undefined) next.hour = values.hour;
         if (values.minute !== undefined) next.minute = values.minute;
         if (values.duration_s !== undefined) next.duration_s = values.duration_s;
@@ -769,23 +1091,43 @@ export class TgWateringMenu {
         const patched = this.patchItem(detail, itemId, updater);
         const item = this.findItem(patched, itemId);
         if (!item) return;
-        const mask = weekdaysMask(item);
+        await replyMenu(
+            ctx,
+            itemDetailLines(item).join("\n"),
+            this.buildItemKeyboard(
+                patched,
+                item,
+                controllersCallbackData,
+                mainMenuCallbackData,
+            ),
+        );
+    }
+
+    async replyPatchedTankEditor(
+        ctx,
+        detail,
+        itemId,
+        updater,
+        replyMenu,
+        mainMenuCallbackData,
+        controllersCallbackData,
+    ) {
+        const patched = this.patchItem(detail, itemId, updater);
+        const item = this.findItem(patched, itemId);
+        if (!item) return;
         const lines = [
             panelTitle(
                 `💧 ${itemName(item, `Полив ${Number(item?.id)}`)}`,
-                `${patched.name || `#${patched.device_id}`}`,
+                "Бак",
             ),
-            `${wateringIcon(item)} Состояние: <b>${escapeHtml(
-                item?.active ? "активен" : item?.paused ? "пауза" : item?.enabled ? "готов" : "выкл",
-            )}</b>`,
+            "",
             `🛢 Бак: <b>${escapeHtml(tankLabel(item))}</b>`,
-            `📅 Дни: <b>${escapeHtml(weekdaysLabel(mask))}</b>`,
-            `⏰ Слоты: <b>${escapeHtml(slotSummary(item))}</b>`,
-        ].filter(Boolean);
+            `💧 Возобновление: <b>${Number(item?.tank) > 0 && item?.resume ? resumeLevelPercent(item) : "выкл"}</b>`,
+        ];
         await replyMenu(
             ctx,
             lines.join("\n"),
-            this.buildItemKeyboard(
+            this.buildTankKeyboard(
                 patched,
                 item,
                 controllersCallbackData,
@@ -815,6 +1157,7 @@ export class TgWateringMenu {
                 `Слот ${safeSlot} · ${patched.name || `#${patched.device_id}`}`,
             ),
             `🛢 Бак: <b>${escapeHtml(tankLabel(item))}</b>`,
+            `⚙️ Слот: <b>${info.enabled ? "ВКЛ" : "ВЫКЛ"}</b>`,
             `⏰ Время: <b>${escapeHtml(slotTimeLabel(item, safeSlot))}</b>`,
             `⌛ Длительность: <b>${escapeHtml(durationLabel(info.duration_s))}</b>`,
             `📅 Дни: <b>${escapeHtml(weekdaysLabel(weekdaysMask(item)))}</b>`,
@@ -872,8 +1215,14 @@ export class TgWateringMenu {
         const mask = weekdaysMask(item);
         keyboard
             .text(
-                item?.active ? "⏻ Выключить полив" : "⏻ Включить полив",
+                `${item?.status ? "🟢" : "⚪"} Питание`,
                 this.statusCallbackData(deviceId, nodeId, itemId),
+            )
+            .row();
+        keyboard
+            .text(
+                `🛢 Бак`,
+                this.tankViewCallbackData(deviceId, nodeId, itemId),
             )
             .row();
         for (let i = 0; i < WEEKDAY_BUTTONS.length; i += 3) {
@@ -891,13 +1240,65 @@ export class TgWateringMenu {
             .text("⏰ Слот 2", this.slotViewCallbackData(deviceId, nodeId, itemId, 2))
             .text("⏰ Слот 3", this.slotViewCallbackData(deviceId, nodeId, itemId, 3))
             .row();
+        keyboard.text(
+            "◀️ Назад",
+            this.controllerCallbackData(deviceId, nodeId),
+        );
+        return keyboard;
+    }
+
+    buildTankKeyboard(
+        detail,
+        item,
+        controllersCallbackData,
+        mainMenuCallbackData,
+    ) {
+        const keyboard = new InlineKeyboard();
+        const deviceId = Number(detail?.device_id);
+        const nodeId = Number(detail?.node_id || 0);
+        const itemId = Number(item?.id);
+        const tanks = Array.isArray(detail?.controllers?.tanks)
+            ? detail.controllers.tanks.filter((tank) => Number(tank?.id) > 0)
+            : [];
+        if (tanks.length) {
+            for (let i = 0; i < tanks.length; i += 2) {
+                const row = tanks.slice(i, i + 2);
+                for (const tank of row) {
+                    const tankId = Number(tank?.id);
+                    const selected = Number(item?.tank) === tankId;
+                    const label = `${selected ? "🟢" : "⚪"} ${itemName(tank, `Бак ${tankId}`)}`;
+                    keyboard.text(
+                        label,
+                        this.tankAssignCallbackData(deviceId, nodeId, itemId, tankId),
+                    );
+                }
+                keyboard.row();
+            }
+        }
         keyboard
             .text(
-                "💧 К списку полива",
-                this.controllerCallbackData(deviceId, nodeId),
+                `${Number(item?.tank) === 0 ? "🟢" : "🚫"} Отвязать`,
+                this.tankAssignCallbackData(deviceId, nodeId, itemId, 0),
             )
             .row();
-        keyboard.text("◀️ Назад", controllersCallbackData(deviceId, nodeId));
+        keyboard
+            .text(
+                `${Number(item?.resume_level) === 0 ? "🟢" : "💧"} До 33%`,
+                this.resumeLevelCallbackData(deviceId, nodeId, itemId, 0),
+            )
+            .text(
+                `${Number(item?.resume_level) === 1 ? "🟢" : "💧"} До 66%`,
+                this.resumeLevelCallbackData(deviceId, nodeId, itemId, 1),
+            )
+            .text(
+                `${Number(item?.resume_level) === 2 ? "🟢" : "💧"} До 99%`,
+                this.resumeLevelCallbackData(deviceId, nodeId, itemId, 2),
+            )
+            .row();
+        keyboard.text(
+            "◀️ Назад",
+            this.itemCallbackData(deviceId, nodeId, itemId),
+        );
         return keyboard;
     }
 
@@ -913,27 +1314,34 @@ export class TgWateringMenu {
         const nodeId = Number(detail?.node_id || 0);
         const itemId = Number(item?.id);
         const safeSlot = clampTimePart(slot, 1, 3);
+        const info = slotInfo(item, safeSlot);
         keyboard
             .text(
-                "−1ч",
+                `${info.enabled ? "🟢" : "⚪"} Слот`,
+                this.slotEnabledCallbackData(deviceId, nodeId, itemId, safeSlot),
+            )
+            .row();
+        keyboard
+            .text(
+                "⏰ −1ч",
                 this.timeCallbackData(deviceId, nodeId, itemId, safeSlot, -1, 0),
             )
             .text(
-                "−1м",
+                "⏰ −1м",
                 this.timeCallbackData(deviceId, nodeId, itemId, safeSlot, 0, -1),
             )
             .text(
-                "+1м",
+                "⏰ +1м",
                 this.timeCallbackData(deviceId, nodeId, itemId, safeSlot, 0, 1),
             )
             .text(
-                "+1ч",
+                "⏰ +1ч",
                 this.timeCallbackData(deviceId, nodeId, itemId, safeSlot, 1, 0),
             )
             .row();
         keyboard
             .text(
-                "−1м",
+                "⌛ −1м",
                 this.durationCallbackData(
                     deviceId,
                     nodeId,
@@ -943,7 +1351,7 @@ export class TgWateringMenu {
                 ),
             )
             .text(
-                "+1м",
+                "⌛ +1м",
                 this.durationCallbackData(
                     deviceId,
                     nodeId,
@@ -958,13 +1366,10 @@ export class TgWateringMenu {
             .text("⏰ Слот 2", this.slotViewCallbackData(deviceId, nodeId, itemId, 2))
             .text("⏰ Слот 3", this.slotViewCallbackData(deviceId, nodeId, itemId, 3))
             .row();
-        keyboard
-            .text(
-                "💧 К правилу",
-                this.itemCallbackData(deviceId, nodeId, itemId),
-            )
-            .row();
-        keyboard.text("◀️ Назад", controllersCallbackData(deviceId, nodeId));
+        keyboard.text(
+            "◀️ Назад",
+            this.itemCallbackData(deviceId, nodeId, itemId),
+        );
         return keyboard;
     }
 
@@ -1019,6 +1424,22 @@ export class TgWateringMenu {
         deltaMinutes = 0,
     ) {
         return `menu:watering:duration:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}:${Number(slot || 1)}:${Number(deltaMinutes || 0)}`;
+    }
+
+    slotEnabledCallbackData(deviceId, nodeId = 0, itemId, slot = 1) {
+        return `menu:watering:slot_enabled:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}:${Number(slot || 1)}`;
+    }
+
+    tankViewCallbackData(deviceId, nodeId = 0, itemId) {
+        return `menu:watering:tank:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}`;
+    }
+
+    tankAssignCallbackData(deviceId, nodeId = 0, itemId, tankId = 0) {
+        return `menu:watering:tank_set:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}:${Number(tankId || 0)}`;
+    }
+
+    resumeLevelCallbackData(deviceId, nodeId = 0, itemId, level = 0) {
+        return `menu:watering:resume_level:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}:${Number(level || 0)}`;
     }
 
     delay(ms) {

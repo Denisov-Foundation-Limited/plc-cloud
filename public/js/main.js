@@ -1455,6 +1455,16 @@ ui.deviceWateringGrid?.addEventListener("click", (e) => {
         const currentMask = Number(tile.dataset.weekdaysMask || 0) & 0x7f;
         const nextMask = currentMask ^ (1 << bit);
         sendCmd("watering", "weekdays", { id, weekdays_mask: nextMask });
+    } else if (action === "slot-enabled-toggle") {
+        const slotEl = actionEl.closest("[data-watering-slot]");
+        const slot = Number(actionEl.dataset.slot || slotEl?.dataset.wateringSlot);
+        if (!Number.isFinite(slot)) return;
+        const currentEnabled = String(slotEl?.dataset.enabled || "0") === "1";
+        sendCmd("watering", "slot_enabled", {
+            id,
+            slot,
+            enabled: !currentEnabled,
+        });
     } else if (action === "slot-duration-step") {
         const slotEl = actionEl.closest("[data-watering-slot]");
         const slot = Number(actionEl.dataset.slot || slotEl?.dataset.wateringSlot);
@@ -1515,6 +1525,7 @@ ui.deviceWateringGrid?.addEventListener("click", (e) => {
             0,
             Number(slotEl?.dataset.durationS || 0),
         );
+        const sourceEnabled = String(slotEl?.dataset.enabled || "0") === "1";
         sendCmd("watering", "time", {
             id,
             slot: targetSlot,
@@ -1525,6 +1536,11 @@ ui.deviceWateringGrid?.addEventListener("click", (e) => {
             id,
             slot: targetSlot,
             duration_s: sourceDurationS,
+        });
+        sendCmd("watering", "slot_enabled", {
+            id,
+            slot: targetSlot,
+            enabled: sourceEnabled,
         });
     } else {
         return;
