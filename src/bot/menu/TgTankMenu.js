@@ -374,16 +374,34 @@ export class TgTankMenu {
         await ctx.answerCallbackQuery({
             text: "Обновляю...",
         });
-        await this.openItem(ctx, {
+        const detail = await this.waitForTankDetail(
             deviceId,
             nodeId,
-            itemId,
             user,
             getScopedDetail,
+            { forceRefresh: true },
+        );
+        if (!detail) {
+            await this.openItem(ctx, {
+                deviceId,
+                nodeId,
+                itemId,
+                user,
+                getScopedDetail,
+                replyMenu,
+                mainMenuCallbackData,
+                controllersCallbackData,
+            });
+            return;
+        }
+        await this.replyFreshItem(
+            ctx,
+            detail,
+            itemId,
             replyMenu,
             mainMenuCallbackData,
             controllersCallbackData,
-        });
+        );
     }
 
     findItem(detail, itemId) {
@@ -474,27 +492,53 @@ export class TgTankMenu {
         return await getScopedDetail(deviceId, nodeId, user);
     }
 
-    async waitForTankDetail(deviceId, nodeId, user, getScopedDetail) {
+    async waitForTankDetail(
+        deviceId,
+        nodeId,
+        user,
+        getScopedDetail,
+        options = {},
+    ) {
+        const forceRefresh = Boolean(options?.forceRefresh);
         let detail = await getScopedDetail(deviceId, nodeId, user);
         const hasTanks = (value) =>
             Array.isArray(value?.controllers?.tanks) &&
             value.controllers.tanks.length > 0;
-        if (hasTanks(detail) || !nodeId || !this.deviceWs) {
+        if (!this.deviceWs) {
             return detail;
         }
+        if (!forceRefresh && (hasTanks(detail) || !nodeId)) {
+            return detail;
+        }
+        const requestWhat = nodeId ? ["system", "controllers"] : ["controllers"];
+        const requestUnit = nodeId ? "stack" : "local";
         const startedAt = Date.now();
-        while (Date.now() - startedAt < 8000) {
+        const timeoutMs = forceRefresh ? 2500 : 8000;
+        const delayMs = forceRefresh ? 350 : 250;
+        let sentAtLeastOnce = false;
+        while (Date.now() - startedAt < timeoutMs) {
             this.deviceWs.sendGet(
                 Number(deviceId),
-                ["system", "controllers"],
-                "stack",
+                requestWhat,
+                requestUnit,
                 nodeId || undefined,
             );
-            await this.delay(250);
+            sentAtLeastOnce = true;
+            await this.delay(delayMs);
             detail = await getScopedDetail(deviceId, nodeId, user);
             if (hasTanks(detail)) {
                 return detail;
             }
+        }
+        if (forceRefresh && !sentAtLeastOnce) {
+            this.deviceWs.sendGet(
+                Number(deviceId),
+                requestWhat,
+                requestUnit,
+                nodeId || undefined,
+            );
+            await this.delay(delayMs);
+            detail = await getScopedDetail(deviceId, nodeId, user);
         }
         return detail;
     }

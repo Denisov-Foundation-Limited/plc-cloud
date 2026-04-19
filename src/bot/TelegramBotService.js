@@ -19,6 +19,7 @@ import {
 import { TgSocketMenu } from "./menu/TgSocketMenu.js";
 import { TgLightMenu } from "./menu/TgLightMenu.js";
 import { TgQuickActionMenu } from "./menu/TgQuickActionMenu.js";
+import { TgRulesMenu } from "./menu/TgRulesMenu.js";
 import { TgMeteoMenu } from "./menu/TgMeteoMenu.js";
 import { TgThermoMenu } from "./menu/TgThermoMenu.js";
 import { TgTankMenu } from "./menu/TgTankMenu.js";
@@ -90,12 +91,38 @@ function controllerIcon(title) {
     if (key.includes("бак")) return "🛢";
     if (key.includes("септик")) return "🚽";
     if (key.includes("полив")) return "💧";
+    if (key.includes("правил")) return "📜";
     if (key.includes("камер")) return "📷";
     if (key.includes("охран")) return "🛡";
     if (key.includes("звон")) return "🔔";
-    if (key.includes("авр")) return "⚙";
+    if (key.includes("авр")) return "⚡";
     if (key.includes("протеч")) return "🚨";
     return "▫️";
+}
+
+function avrSourceLabel(value) {
+    const raw = String(value || "").trim().toLowerCase();
+    if (!raw || raw === "off") return "Выключен";
+    if (raw === "main") return "Основной";
+    if (raw === "reserve") return "Резерв";
+    return value || "-";
+}
+
+function avrFaultLabel(value) {
+    const raw = String(value || "").trim().toLowerCase();
+    if (!raw || raw === "none") return "";
+    if (raw === "no_source") return "Нет источника";
+    if (raw === "transfer_timeout") return "Таймаут переключения";
+    if (raw === "interlock") return "Блокировка";
+    if (raw === "feedback_mismatch") return "Нет подтверждения";
+    return value || "";
+}
+
+function avrStatusLabel(value) {
+    if (!value || typeof value !== "object") return "-";
+    const source = avrSourceLabel(value.active_source);
+    const fault = avrFaultLabel(value.fault);
+    return fault ? `${source} / ${fault}` : source;
 }
 
 function safeText(value, fallback = "-") {
@@ -199,6 +226,7 @@ export class TelegramBotService {
         this.socketMenu = new TgSocketMenu({ registry, devicesDb });
         this.lightMenu = new TgLightMenu({ registry, devicesDb });
         this.quickActionMenu = new TgQuickActionMenu({ registry, devicesDb });
+        this.rulesMenu = new TgRulesMenu({ registry, devicesDb });
         this.meteoMenu = new TgMeteoMenu({ registry, devicesDb });
         this.thermoMenu = new TgThermoMenu({ registry, devicesDb });
         this.tankMenu = new TgTankMenu({ registry, devicesDb });
@@ -226,6 +254,7 @@ export class TelegramBotService {
         this.socketMenu.setDeviceWs(deviceWs);
         this.lightMenu.setDeviceWs(deviceWs);
         this.quickActionMenu.setDeviceWs(deviceWs);
+        this.rulesMenu.setDeviceWs(deviceWs);
         this.thermoMenu.setDeviceWs(deviceWs);
         this.tankMenu.setDeviceWs(deviceWs);
         this.septicMenu.setDeviceWs(deviceWs);
@@ -1429,6 +1458,40 @@ export class TelegramBotService {
                     `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId}`,
                 );
                 await this.wateringMenu.toggleStatus(ctx, {
+                    deviceId,
+                    nodeId: nodeId > 0 ? nodeId : null,
+                    itemId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    mainMenuCallbackData: CALLBACK_MAIN,
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+            },
+        );
+
+        this.bot.callbackQuery(
+            new RegExp(`^menu:watering:force:(\\d+):(\\d+):(\\d+)$`),
+            async (ctx) => {
+                const user = await this.requireLinkedUser(ctx);
+                if (!user) return;
+                const deviceId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[1] : "",
+                );
+                const nodeId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[2] : "",
+                );
+                const itemId = Number(
+                    Array.isArray(ctx.match) ? ctx.match[3] : "",
+                );
+                this.logTelegramAction(
+                    ctx,
+                    user,
+                    "watering_force_toggle",
+                    `device_id: ${deviceId} node_id: ${nodeId || 0} id: ${itemId}`,
+                );
+                await this.wateringMenu.toggleForce(ctx, {
                     deviceId,
                     nodeId: nodeId > 0 ? nodeId : null,
                     itemId,
@@ -2821,6 +2884,7 @@ export class TelegramBotService {
         if (normalized === "баки") return "tanks";
         if (normalized === "септик") return "septic";
         if (normalized === "полив") return "watering";
+        if (normalized === "правила") return "rules";
         if (normalized === "камеры") return "cameras";
         if (normalized === "охрана") return "security";
         return "";
@@ -2955,6 +3019,20 @@ export class TelegramBotService {
                         nextUser,
                         "watering",
                     ),
+                replyMenu: this.replyMenu.bind(this),
+                mainMenuCallbackData: CALLBACK_MAIN,
+                controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                    `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+            });
+            await remember();
+            return true;
+        }
+        if (controller === "rules") {
+            await this.rulesMenu.open(ctx, {
+                deviceId,
+                nodeId: effectiveNodeId,
+                user,
+                getScopedDetail: this.getScopedTelegramDetail.bind(this),
                 replyMenu: this.replyMenu.bind(this),
                 mainMenuCallbackData: CALLBACK_MAIN,
                 controllersCallbackData: (nextDeviceId, nextNodeId) =>
@@ -3273,7 +3351,7 @@ export class TelegramBotService {
                 await this.quickActionMenu.run(actionCtx, {
                     deviceId: Number(match[1]),
                     nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
-                    actionKey: String(match[3]),
+                    preset: String(match[3]),
                     user,
                     replyMenu: this.replyMenu.bind(this),
                     refreshControllers: async () => {
@@ -3284,6 +3362,42 @@ export class TelegramBotService {
                             user,
                         );
                     },
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:rules:run:(\d+):(\d+):(\d+)$/);
+            if (match) {
+                const deviceId = Number(match[1]);
+                const nodeId = Number(match[2]) > 0 ? Number(match[2]) : null;
+                const ruleId = Number(match[3]);
+                await this.rulesMenu.run(actionCtx, {
+                    deviceId,
+                    nodeId,
+                    ruleId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
+                });
+                return true;
+            }
+        }
+        {
+            const match = value.match(/^menu:rules:refresh:(\d+):(\d+)$/);
+            if (match) {
+                const deviceId = Number(match[1]);
+                const nodeId = Number(match[2]) > 0 ? Number(match[2]) : null;
+                await this.rulesMenu.refresh(actionCtx, {
+                    deviceId,
+                    nodeId,
+                    user,
+                    getScopedDetail: this.getScopedTelegramDetail.bind(this),
+                    replyMenu: this.replyMenu.bind(this),
+                    controllersCallbackData: (nextDeviceId, nextNodeId) =>
+                        `${CALLBACK_DEVICE_PREFIX}${Number(nextDeviceId)}:${Number(nextNodeId || 0)}`,
                 });
                 return true;
             }
@@ -3631,6 +3745,18 @@ export class TelegramBotService {
             }
         }
         {
+            const match = value.match(/^menu:watering:force:(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.wateringMenu.toggleForce(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
             const match = value.match(/^menu:watering:day:(\d+):(\d+):(\d+):(\d+)$/);
             if (match) {
                 await this.wateringMenu.toggleWeekday(actionCtx, {
@@ -3884,7 +4010,7 @@ export class TelegramBotService {
                 await this.quickActionMenu.run(ctx, {
                     deviceId: Number(state.device_id),
                     nodeId: Number(state.node_id || 0) || null,
-                    actionKey: quickItem.key,
+                    preset: quickItem.key,
                     user,
                     replyMenu: this.replyMenu.bind(this),
                 });
@@ -4157,7 +4283,7 @@ export class TelegramBotService {
             });
         if (hasAvr)
             controllerButtons.push({
-                label: "⚙ АВР",
+                label: "⚡ АВР",
                 data: `${CALLBACK_DEVICE_PREFIX}${deviceId}:${nodeId}`,
             });
         if (hasLeak)
@@ -4304,6 +4430,7 @@ export class TelegramBotService {
         const watering = Array.isArray(controllers.watering)
             ? controllers.watering
             : [];
+        const rules = Array.isArray(controllers.rules) ? controllers.rules : [];
         const cameras = Array.isArray(controllers.cameras)
             ? controllers.cameras
             : [];
@@ -4349,6 +4476,12 @@ export class TelegramBotService {
             controllers.watering &&
             typeof controllers.watering === "object"
                 ? controllers.watering
+                : null;
+        const rulesSummary =
+            !Array.isArray(controllers.rules) &&
+            controllers.rules &&
+            typeof controllers.rules === "object"
+                ? controllers.rules
                 : null;
         const camerasSummary =
             !Array.isArray(controllers.cameras) &&
@@ -4420,6 +4553,14 @@ export class TelegramBotService {
                 visible: hasControllerData(watering, wateringSummary),
             },
             {
+                title: "Правила",
+                status:
+                    rules.length > 0
+                        ? `${rules.length}`
+                        : `${countOf(rulesSummary, "enabled_count", "enabled")}`,
+                visible: hasControllerData(rules, rulesSummary, "enabled_count", "enabled"),
+            },
+            {
                 title: "Камеры",
                 status:
                     cameras.length > 0
@@ -4442,16 +4583,14 @@ export class TelegramBotService {
                 title: "Звонок",
                 status: controllers.ring
                     ? controllers.ring.relay_on
-                        ? "Вкл"
-                        : "Выкл"
+                        ? "Включен"
+                        : "Выключен"
                     : "-",
                 visible: Boolean(controllers.ring?.enabled) || (preferKeyPresence && Boolean(controllers.ring)),
             },
             {
                 title: "АВР",
-                status: controllers.avr
-                    ? `${controllers.avr.active_source || "-"}${controllers.avr.fault && controllers.avr.fault !== "none" ? ` / ${controllers.avr.fault}` : ""}`
-                    : "-",
+                status: avrStatusLabel(controllers.avr),
                 visible: Boolean(controllers.avr?.enabled) || (preferKeyPresence && Boolean(controllers.avr)),
             },
             {

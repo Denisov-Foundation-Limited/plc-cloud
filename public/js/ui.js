@@ -80,6 +80,31 @@ function formatTemperature(value, digits = null) {
     return `${text} &deg;C`;
 }
 
+function avrSourceLabel(value) {
+    const raw = String(value || "").trim().toLowerCase();
+    if (!raw || raw === "off") return "Выключен";
+    if (raw === "main") return "Основной";
+    if (raw === "reserve") return "Резерв";
+    return String(value || "-");
+}
+
+function avrFaultLabel(value) {
+    const raw = String(value || "").trim().toLowerCase();
+    if (!raw || raw === "none") return "";
+    if (raw === "no_source") return "Нет источника";
+    if (raw === "transfer_timeout") return "Таймаут переключения";
+    if (raw === "interlock") return "Блокировка";
+    if (raw === "feedback_mismatch") return "Нет подтверждения";
+    return String(value || "");
+}
+
+function avrStatusLabel(value) {
+    if (!value || typeof value !== "object") return "-";
+    const source = avrSourceLabel(value.active_source);
+    const fault = avrFaultLabel(value.fault);
+    return fault ? `${source} / ${fault}` : source;
+}
+
 function formatLastEvent(eventPayload) {
     if (!eventPayload || typeof eventPayload !== "object") return "—";
     const kind = String(eventPayload.kind || "event").trim() || "event";
@@ -364,8 +389,8 @@ function summarizeControllers(controllers = {}, summary = null, options = {}) {
             title: "Звонок",
             status: effectiveControllers.ring
                 ? effectiveControllers.ring.relay_on
-                    ? "Вкл"
-                    : "Выкл"
+                    ? "Включен"
+                    : "Выключен"
                 : "-",
             online: Boolean(effectiveControllers.ring?.enabled) || (preferKeyPresence && Boolean(effectiveControllers.ring)),
             visible: Boolean(effectiveControllers.ring?.enabled) || (preferKeyPresence && Boolean(effectiveControllers.ring)),
@@ -373,9 +398,7 @@ function summarizeControllers(controllers = {}, summary = null, options = {}) {
         {
             key: "avr",
             title: "АВР",
-            status: effectiveControllers.avr
-                ? `${effectiveControllers.avr.active_source || "-"}${effectiveControllers.avr.fault && effectiveControllers.avr.fault !== "none" ? ` / ${effectiveControllers.avr.fault}` : ""}`
-                : "-",
+            status: avrStatusLabel(effectiveControllers.avr),
             online: Boolean(effectiveControllers.avr?.enabled) || (preferKeyPresence && Boolean(effectiveControllers.avr)),
             visible: Boolean(effectiveControllers.avr?.enabled) || (preferKeyPresence && Boolean(effectiveControllers.avr)),
         },
@@ -1990,14 +2013,23 @@ export class Ui {
             .map((item) => {
                 const id = Number(item?.id);
                 const enabled = Boolean(item?.enabled);
-                const writable = controllerAccess(
+                const powerWritable = controllerAccess(
                     detail,
                     "watering",
                     id,
                     "status",
                 ).write;
-                const active = Boolean(item?.active ?? item?.status);
-                const paused = Boolean(item?.paused);
+                const forceWritable = controllerAccess(
+                    detail,
+                    "watering",
+                    id,
+                    "force",
+                ).write;
+                const writable = powerWritable || forceWritable;
+                const powerOn = Boolean(item?.status);
+                const force = Boolean(item?.force);
+                const active = force || (powerOn && Boolean(item?.active));
+                const paused = !force && powerOn && Boolean(item?.paused);
                 const resume = Boolean(item?.resume);
                 const weekdaysMask = wateringWeekdaysMask(item);
                 const activeDays = wateringWeekdayList(weekdaysMask);
@@ -2137,7 +2169,7 @@ export class Ui {
                     })
                     .join("");
                 return `
-        <article class="tile watering-item ${enabled && writable ? "" : "disabled"}" data-watering-id="${id}" data-status="${active ? "1" : "0"}" data-active="${active ? "1" : "0"}" data-weekdays-mask="${weekdaysMask}">
+        <article class="tile watering-item ${enabled && writable ? "" : "disabled"}" data-watering-id="${id}" data-status="${powerOn ? "1" : "0"}" data-force="${force ? "1" : "0"}" data-active="${active ? "1" : "0"}" data-weekdays-mask="${weekdaysMask}">
           <div class="thermo-left">
             <div class="watering-visual">
               <span class="socket-chip">#${id}</span>
@@ -2145,11 +2177,11 @@ export class Ui {
                 <path d="M8 34h20v10h8V34h8c6 0 12 5 12 12v2"/>
                 <path d="M56 52c0 4-3 6-6 6s-6-2-6-6c0-4 6-10 6-10s6 6 6 10z"/>
               </svg>
-              <span class="level-label">${active ? "РАБОТА" : "ПРОСТОЙ"}</span>
+              <span class="level-label">${force ? "ПОЛИВ" : active ? "РАБОТА" : paused ? "ПАУЗА" : "ПРОСТОЙ"}</span>
             </div>
             <div class="status-line">
-              <span class="status-dot ${active ? "status-on" : "status-idle"}"></span>
-              <span class="status-value">${active ? "Активен" : "Остановлен"}</span>
+              <span class="status-dot ${(active || force) ? "status-on" : "status-idle"}"></span>
+              <span class="status-value">${force ? "Ручной полив" : !powerOn ? "Выключен" : active ? "Активен" : paused ? "Ожидание бака" : "Ожидание времени"}</span>
               <span class="badge">#${id}</span>
             </div>
           </div>
@@ -2159,8 +2191,8 @@ export class Ui {
               ${onOffDot(enabled)}
             </div>
             <div class="metric-grid">
-              <span class="metric-chip ${active ? "is-on" : "is-off"}"><span class="metric-label">Статус</span><span class="metric-value">${active ? "ВКЛ" : "ВЫКЛ"}</span></span>
-              <span class="metric-chip ${paused ? "is-warn" : "is-off"}"><span class="metric-label">Пауза</span><span class="metric-value">${paused ? "ДА" : "НЕТ"}</span></span>
+              <span class="metric-chip ${powerOn ? "is-on" : "is-off"}"><span class="metric-label">Питание</span><span class="metric-value">${powerOn ? "ВКЛ" : "ВЫКЛ"}</span></span>
+              <span class="metric-chip ${active ? "is-on" : paused ? "is-warn" : "is-off"}"><span class="metric-label">Статус</span><span class="metric-value">${force ? "ПОЛИВ" : !powerOn ? "ВЫКЛ" : active ? "АКТИВЕН" : paused ? "БАК" : "ВРЕМЯ"}</span></span>
               <span class="metric-chip ${resume ? "is-running" : "is-off"}"><span class="metric-label">Возобновление</span><span class="metric-value">${resume ? "ВКЛ" : "ВЫКЛ"}</span></span>
               <span class="metric-chip is-off"><span class="metric-label">Осталось</span><span class="metric-value">${esc(leftText)}</span></span>
             </div>
@@ -2176,7 +2208,8 @@ export class Ui {
               ${slotsMarkup}
             </div>
             <div class="socket-actions action-row">
-              <button class="ghost btn-sm ${active ? "btn-off" : "btn-on"}" data-action="status-toggle" ${enabled && writable ? "" : "disabled"}>${active ? "Статус ВЫКЛ" : "Статус ВКЛ"}</button>
+              <button class="ghost btn-sm ${powerOn ? "btn-off" : "btn-on"}" data-action="status-toggle" ${enabled && powerWritable ? "" : "disabled"}>${powerOn ? "⚪ Питание" : "🟢 Питание"}</button>
+              <button class="ghost btn-sm ${(active || force) ? "btn-off" : "btn-on"}" data-action="force-toggle" ${enabled && forceWritable ? "" : "disabled"}>${force ? "🟢 Полить" : "💧 Полить"}</button>
             </div>
           </div>
         </article>

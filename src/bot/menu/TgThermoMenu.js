@@ -475,16 +475,35 @@ export class TgThermoMenu {
         await ctx.answerCallbackQuery({
             text: "Обновляю...",
         });
-        await this.openItem(ctx, {
+        const detail = await this.waitForThermoDetail(
             deviceId,
             nodeId,
-            itemId,
             user,
             getScopedDetail,
+            { forceRefresh: true },
+        );
+        if (!detail) {
+            await this.openItem(ctx, {
+                deviceId,
+                nodeId,
+                itemId,
+                user,
+                getScopedDetail,
+                replyMenu,
+                mainMenuCallbackData,
+                controllersCallbackData,
+            });
+            return;
+        }
+        await this.replyPatchedItem(
+            ctx,
+            detail,
+            itemId,
+            (current) => current,
             replyMenu,
             mainMenuCallbackData,
             controllersCallbackData,
-        });
+        );
     }
 
     async sendCommand({
@@ -536,23 +555,37 @@ export class TgThermoMenu {
         return true;
     }
 
-    async waitForThermoDetail(deviceId, nodeId, user, getScopedDetail) {
+    async waitForThermoDetail(
+        deviceId,
+        nodeId,
+        user,
+        getScopedDetail,
+        options = {},
+    ) {
+        const forceRefresh = Boolean(options?.forceRefresh);
         let detail = await getScopedDetail(deviceId, nodeId, user);
         const hasThermo = (value) =>
             Array.isArray(value?.controllers?.thermo) &&
             value.controllers.thermo.length > 0;
-        if (hasThermo(detail) || !nodeId || !this.deviceWs) {
+        if (!this.deviceWs) {
             return detail;
         }
+        if (!forceRefresh && (hasThermo(detail) || !nodeId)) {
+            return detail;
+        }
+        const requestWhat = nodeId ? ["system", "controllers"] : ["controllers"];
+        const requestUnit = nodeId ? "stack" : "local";
         const startedAt = Date.now();
-        while (Date.now() - startedAt < 8000) {
+        const timeoutMs = forceRefresh ? 2500 : 8000;
+        const delayMs = forceRefresh ? 350 : 250;
+        while (Date.now() - startedAt < timeoutMs) {
             this.deviceWs.sendGet(
                 Number(deviceId),
-                ["system", "controllers"],
-                "stack",
+                requestWhat,
+                requestUnit,
                 nodeId || undefined,
             );
-            await this.delay(250);
+            await this.delay(delayMs);
             detail = await getScopedDetail(deviceId, nodeId, user);
             if (hasThermo(detail)) {
                 return detail;

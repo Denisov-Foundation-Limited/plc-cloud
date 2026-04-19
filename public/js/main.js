@@ -1449,6 +1449,9 @@ ui.deviceWateringGrid?.addEventListener("click", (e) => {
     if (action === "status-toggle") {
         const status = tile.dataset.status === "1";
         sendCmd("watering", "status", { id, state: status ? "off" : "on" });
+    } else if (action === "force-toggle") {
+        const force = tile.dataset.force === "1";
+        sendCmd("watering", "force", { id, state: force ? "off" : "on" });
     } else if (action === "weekday-toggle") {
         const bit = Number(actionEl.dataset.bit);
         if (!Number.isFinite(bit)) return;

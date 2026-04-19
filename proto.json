@@ -342,6 +342,7 @@
             "name": "string",
             "enabled": "bool",
             "status": "bool",
+            "force": "bool",
             "port": "u8",
             "tank": "u8",
             "tank_name": "string",
@@ -444,6 +445,7 @@
         ],
         "watering": [
             { "action": "status", "args": { "id": "u8", "state": "on|off" } },
+            { "action": "force", "args": { "id": "u8", "state": "on|off" } },
             { "action": "weekdays", "args": { "id": "u8", "weekdays_mask": "u8" } },
             { "action": "tank", "args": { "id": "u8", "tank_id": "u8" } },
             { "action": "resume", "args": { "id": "u8", "enabled": "bool" } },
@@ -472,7 +474,8 @@
             { "action": "power", "args": { "id": "u8", "state": "on|off" } },
             { "action": "ack", "args": { "id": "u8" } },
             { "action": "ack_all", "args": {} }
-        ]
+        ],
+        "rules": [{ "action": "run", "args": { "id": "u8" } }]
     },
     "rules": {
         "no_config": true,

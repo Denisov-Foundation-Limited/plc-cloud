@@ -11,6 +11,7 @@
 /**********************************************************************/
 const CONTROLLER_KEYS = [
     "quick_actions",
+    "rules",
     "sockets",
     "lights",
     "meteo",
@@ -93,7 +94,11 @@ function normalizeRule(raw) {
               : {};
     const controllers = {};
     for (const key of CONTROLLER_KEYS) {
-        controllers[key] = normalizeControllerPolicy(controllersSource[key]);
+        controllers[key] = normalizeControllerPolicy(
+            key === "rules" && controllersSource[key] === undefined
+                ? controllersSource.quick_actions
+                : controllersSource[key],
+        );
     }
     return {
         usernames: new Set(
@@ -369,7 +374,10 @@ export function canSendControllerCommand(
 ) {
     const access = resolveAccess(summary, session);
     if (!access.objectAllowed || !access.deviceAllowed) return false;
-    const policy = access.controllers[String(controller || "")];
+    const ctrlKey = String(controller || "");
+    const policy =
+        access.controllers[ctrlKey] ||
+        (ctrlKey === "rules" ? access.controllers.quick_actions : null);
     if (!policy?.write) return false;
     if (
         policy.actions &&

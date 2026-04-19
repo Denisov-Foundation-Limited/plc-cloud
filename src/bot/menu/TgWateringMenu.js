@@ -47,6 +47,7 @@ function itemName(item, fallback) {
 }
 
 function wateringIcon(item) {
+    if (item?.force) return "💧";
     if (!item?.status) return "⚪";
     if (item?.active) return "🟢";
     if (item?.paused) return "⏸💧";
@@ -55,6 +56,7 @@ function wateringIcon(item) {
 }
 
 function wateringStatusIcon(item) {
+    if (item?.force) return "💧";
     if (!item?.status) return "⚪";
     if (item?.active) return "🟢";
     if (item?.paused) return "⏸💧";
@@ -62,6 +64,7 @@ function wateringStatusIcon(item) {
 }
 
 function wateringStatusLabel(item) {
+    if (item?.force) return "ручной полив";
     if (!item?.status) return "выкл";
     if (item?.active) return "активен";
     if (item?.paused) return "ожидание бака";
@@ -219,7 +222,7 @@ function itemDetailLines(item) {
     return [
         panelTitle(`💧 ${itemName(item, `Полив ${id}`)}`),
         `🔌 Питание: <b>${wateringPowerLabel(item)}</b>`,
-        `📟 Статус: <b>${wateringStatusIcon(item)}</b>`,
+        `📟 Статус: <b>${wateringStatusIcon(item)}</b> <b>${escapeHtml(wateringStatusLabel(item))}</b>`,
         `🛢 Бак: <b>${escapeHtml(tankLabel(item))}</b>`,
         `📅 Дни: <b>${escapeHtml(weekdaysLabel(mask))}</b>`,
         slotLine(item, 1, item?.duration_s),
@@ -557,6 +560,10 @@ export class TgWateringMenu {
             return;
         }
         const safeLevel = Math.max(0, Math.min(2, Number(level) || 0));
+        const sameLevelSelected =
+            Number(item?.tank) > 0 &&
+            Boolean(item?.resume) &&
+            Number(item?.resume_level) === safeLevel;
         const okLevel = await this.sendCommand({
             deviceId,
             nodeId,
@@ -570,7 +577,10 @@ export class TgWateringMenu {
                   nodeId,
                   user,
                   action: "resume",
-                  args: { id: Number(itemId), enabled: Number(item?.tank) > 0 },
+                  args: {
+                      id: Number(itemId),
+                      enabled: Number(item?.tank) > 0 && !sameLevelSelected,
+                  },
               })
             : false;
         if (!okLevel || !okResume) {
@@ -581,7 +591,9 @@ export class TgWateringMenu {
             return;
         }
         await ctx.answerCallbackQuery({
-            text: `Возобновление: ${safeLevel >= 2 ? "99%" : safeLevel >= 1 ? "66%" : "33%"}`,
+            text: sameLevelSelected
+                ? "Возобновление выключено"
+                : `Возобновление: ${safeLevel >= 2 ? "99%" : safeLevel >= 1 ? "66%" : "33%"}`,
         });
         await this.replyPatchedTankEditor(
             ctx,
@@ -590,7 +602,64 @@ export class TgWateringMenu {
             (current) => ({
                 ...current,
                 resume_level: safeLevel,
-                resume: Number(current?.tank) > 0,
+                resume: Number(current?.tank) > 0 && !sameLevelSelected,
+            }),
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        );
+    }
+
+    async toggleForce(
+        ctx,
+        {
+            deviceId,
+            nodeId = null,
+            itemId,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        },
+    ) {
+        const detail = await getScopedDetail(deviceId, nodeId, user);
+        const item = this.findItem(detail, itemId);
+        if (!detail || !item) {
+            await ctx.answerCallbackQuery({
+                text: "Полив недоступен",
+                show_alert: true,
+            });
+            return;
+        }
+        const nextState = item?.force ? "off" : "on";
+        const ok = await this.sendCommand({
+            deviceId,
+            nodeId,
+            user,
+            action: "force",
+            args: { id: Number(itemId), state: nextState },
+        });
+        if (!ok) {
+            await ctx.answerCallbackQuery({
+                text: "Нет прав или устройство оффлайн",
+                show_alert: true,
+            });
+            return;
+        }
+        await ctx.answerCallbackQuery({
+            text: nextState === "on" ? "Ручной полив запускаю..." : "Ручной полив останавливаю...",
+        });
+        await this.replyPatchedItem(
+            ctx,
+            detail,
+            itemId,
+            (current) => ({
+                ...current,
+                force: nextState === "on",
+                status: nextState === "on" ? true : current?.status,
+                active: nextState === "on" ? true : false,
+                paused: false,
             }),
             replyMenu,
             mainMenuCallbackData,
@@ -645,6 +714,7 @@ export class TgWateringMenu {
             (current) => ({
                 ...current,
                 status: nextState === "on",
+                force: nextState === "on" ? current?.force : false,
                 active: nextState === "on" ? current?.active : false,
                 paused: nextState === "on" ? current?.paused : false,
             }),
@@ -1218,6 +1288,10 @@ export class TgWateringMenu {
                 `${item?.status ? "🟢" : "⚪"} Питание`,
                 this.statusCallbackData(deviceId, nodeId, itemId),
             )
+            .text(
+                `🚰 ${item?.force ? "Не поливать" : "Полить"}`,
+                this.forceCallbackData(deviceId, nodeId, itemId),
+            )
             .row();
         keyboard
             .text(
@@ -1283,15 +1357,15 @@ export class TgWateringMenu {
             .row();
         keyboard
             .text(
-                `${Number(item?.resume_level) === 0 ? "🟢" : "💧"} До 33%`,
+                "💧 До 33%",
                 this.resumeLevelCallbackData(deviceId, nodeId, itemId, 0),
             )
             .text(
-                `${Number(item?.resume_level) === 1 ? "🟢" : "💧"} До 66%`,
+                "💧 До 66%",
                 this.resumeLevelCallbackData(deviceId, nodeId, itemId, 1),
             )
             .text(
-                `${Number(item?.resume_level) === 2 ? "🟢" : "💧"} До 99%`,
+                "💧 До 99%",
                 this.resumeLevelCallbackData(deviceId, nodeId, itemId, 2),
             )
             .row();
@@ -1395,6 +1469,10 @@ export class TgWateringMenu {
 
     statusCallbackData(deviceId, nodeId = 0, itemId) {
         return `menu:watering:status:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}`;
+    }
+
+    forceCallbackData(deviceId, nodeId = 0, itemId) {
+        return `menu:watering:force:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}`;
     }
 
     weekdayCallbackData(deviceId, nodeId = 0, itemId, bit) {

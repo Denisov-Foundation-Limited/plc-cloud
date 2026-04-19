@@ -67,6 +67,47 @@ function triggeredSensors(detail) {
     return securitySensors(detail).filter((item) => Boolean(item?.detect));
 }
 
+function sensorDisplayName(sensor, fallback = "Датчик") {
+    const unitName = String(sensor?._unit_name || "").trim();
+    const sensorName = itemName(sensor, fallback);
+    return unitName ? `${unitName} · ${sensorName}` : sensorName;
+}
+
+function armBlockedMessage(detail, security) {
+    const sensors = triggeredSensors(detail);
+    if (sensors.length) {
+        const localUnitName = itemName(detail, `#${detail?.device_id || ""}`);
+        const names = sensors
+            .slice(0, 8)
+            .map((sensor) =>
+                escapeHtml(
+                    sensorDisplayName(
+                        { ...sensor, _unit_name: localUnitName },
+                        `Датчик ${Number(sensor?.id || 0)}`,
+                    ),
+                ),
+            )
+            .join("\n");
+        return [
+            "Невозможно поставить на охрану.",
+            "",
+            "Сработали датчики:",
+            `<pre>${names}</pre>`,
+        ].join("\n");
+    }
+    const detectedCount = Number(
+        security?.detected_count ?? security?.detected ?? 0,
+    );
+    if (detectedCount > 0) {
+        return [
+            "Невозможно поставить на охрану.",
+            "",
+            `Есть сработавшие датчики: <b>${detectedCount}</b>`,
+        ].join("\n");
+    }
+    return "Невозможно поставить на охрану.";
+}
+
 function isMasterScope(detail) {
     return !Number(detail?.node_id || 0);
 }
@@ -137,10 +178,7 @@ function securityDetailLines(detail, security) {
                 .slice(0, 8)
                 .map((sensor) => {
                     const id = Number(sensor?.id);
-                    const unitPrefix = sensor?._from_stack
-                        ? `${escapeHtml(sensor._unit_name || "Юнит")} · `
-                        : "";
-                    return `${sensorStateIcon(sensor)} ${unitPrefix}${itemName(sensor, `Датчик ${id}`)} · ${sensorTypeLabel(sensor)}`;
+                    return `${sensorStateIcon(sensor)} ${escapeHtml(sensorDisplayName(sensor, `Датчик ${id}`))} · ${sensorTypeLabel(sensor)}`;
                 })
                 .join("\n"),
         );
@@ -166,7 +204,7 @@ function securitySensorsLines(detail, security) {
         sensors
             .map((sensor) => {
                 const id = Number(sensor?.id);
-                return `${sensorStateIcon(sensor)} ${itemName(sensor, `Датчик ${id}`)} · ${sensorTypeLabel(sensor)}`;
+                return `${sensorStateIcon(sensor)} ${escapeHtml(sensorDisplayName({ ...sensor, _unit_name: itemName(detail, `#${detail?.device_id || ""}`) }, `Датчик ${id}`))} · ${sensorTypeLabel(sensor)}`;
             })
             .join("\n"),
     );
@@ -321,6 +359,32 @@ export class TgSecurityMenu {
             getScopedDetail,
             arm,
         );
+        const freshSecurity =
+            freshDetail?.controllers?.security &&
+            typeof freshDetail.controllers.security === "object"
+                ? freshDetail.controllers.security
+                : null;
+        if (
+            arm &&
+            freshDetail &&
+            freshSecurity &&
+            !freshSecurity.armed &&
+            (triggeredSensors(freshDetail).length > 0 ||
+                Number(freshSecurity?.detected_count ?? freshSecurity?.detected ?? 0) > 0)
+        ) {
+            await replyMenu(
+                ctx,
+                armBlockedMessage(freshDetail, freshSecurity),
+                this.buildItemKeyboard(
+                    freshDetail,
+                    freshSecurity,
+                    controllersCallbackData,
+                    mainMenuCallbackData,
+                ),
+                { force_new_message: true },
+            );
+            return;
+        }
         await this.replyFreshItem(
             ctx,
             freshDetail ||
@@ -348,15 +412,31 @@ export class TgSecurityMenu {
         },
     ) {
         await ctx.answerCallbackQuery({ text: "Обновляю..." });
-        await this.open(ctx, {
+        const detail = await this.waitForReloadedDetail(
             deviceId,
             nodeId,
             user,
             getScopedDetail,
+        );
+        if (!detail) {
+            await this.open(ctx, {
+                deviceId,
+                nodeId,
+                user,
+                getScopedDetail,
+                replyMenu,
+                mainMenuCallbackData,
+                controllersCallbackData,
+            });
+            return;
+        }
+        await this.replyFreshItem(
+            ctx,
+            detail,
             replyMenu,
             mainMenuCallbackData,
             controllersCallbackData,
-        });
+        );
     }
 
     async openSensors(
@@ -414,15 +494,51 @@ export class TgSecurityMenu {
         },
     ) {
         await ctx.answerCallbackQuery({ text: "Обновляю..." });
-        await this.openSensors(ctx, {
+        const detail = await this.waitForReloadedDetail(
             deviceId,
             nodeId,
             user,
             getScopedDetail,
-            replyMenu,
-            mainMenuCallbackData,
-            controllersCallbackData,
-        });
+        );
+        if (!detail) {
+            await this.openSensors(ctx, {
+                deviceId,
+                nodeId,
+                user,
+                getScopedDetail,
+                replyMenu,
+                mainMenuCallbackData,
+                controllersCallbackData,
+            });
+            return;
+        }
+        const security =
+            detail?.controllers?.security &&
+            typeof detail.controllers.security === "object"
+                ? detail.controllers.security
+                : null;
+        if (!security) {
+            await this.openSensors(ctx, {
+                deviceId,
+                nodeId,
+                user,
+                getScopedDetail,
+                replyMenu,
+                mainMenuCallbackData,
+                controllersCallbackData,
+            });
+            return;
+        }
+        await replyMenu(
+            ctx,
+            securitySensorsLines(detail, security).join("\n"),
+            this.buildSensorsKeyboard(
+                detail,
+                controllersCallbackData,
+                mainMenuCallbackData,
+            ),
+            { force_new_message: true },
+        );
     }
 
     patchSecurity(detail, updater) {
@@ -455,6 +571,31 @@ export class TgSecurityMenu {
                 security &&
                 Boolean(security?.armed) === Boolean(expectedArmed)
             ) {
+                return detail;
+            }
+        }
+        return await getScopedDetail(deviceId, nodeId, user);
+    }
+
+    async waitForReloadedDetail(deviceId, nodeId, user, getScopedDetail) {
+        if (!this.deviceWs) {
+            return await getScopedDetail(deviceId, nodeId, user);
+        }
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+            this.deviceWs.sendGet(
+                Number(deviceId),
+                nodeId ? ["system", "controllers"] : ["controllers"],
+                nodeId ? "stack" : "local",
+                nodeId || undefined,
+            );
+            await this.delay(attempt === 0 ? 350 : 250);
+            const detail = await getScopedDetail(deviceId, nodeId, user);
+            const security =
+                detail?.controllers?.security &&
+                typeof detail.controllers.security === "object"
+                    ? detail.controllers.security
+                    : null;
+            if (detail && security) {
                 return detail;
             }
         }
