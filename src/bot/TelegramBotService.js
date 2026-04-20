@@ -3757,6 +3757,18 @@ export class TelegramBotService {
             }
         }
         {
+            const match = value.match(/^menu:watering:refresh:(\d+):(\d+):(\d+)$/);
+            if (match) {
+                await this.wateringMenu.refreshItem(actionCtx, {
+                    deviceId: Number(match[1]),
+                    nodeId: Number(match[2]) > 0 ? Number(match[2]) : null,
+                    itemId: Number(match[3]),
+                    ...this.controllerMenuOptions(user),
+                });
+                return true;
+            }
+        }
+        {
             const match = value.match(/^menu:watering:day:(\d+):(\d+):(\d+):(\d+)$/);
             if (match) {
                 await this.wateringMenu.toggleWeekday(actionCtx, {

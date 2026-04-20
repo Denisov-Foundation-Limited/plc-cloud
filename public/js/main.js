@@ -1032,6 +1032,11 @@ ui.backToControllersFromWatering?.addEventListener("click", () => {
     ui.show("deviceControllers");
 });
 
+ui.backToControllersFromRules?.addEventListener("click", () => {
+    if (!state.currentDevice) return;
+    ui.show("deviceControllers");
+});
+
 ui.backToControllersFromRing?.addEventListener("click", () => {
     if (!state.currentDevice) return;
     ui.show("deviceControllers");
@@ -1270,6 +1275,10 @@ ui.deviceControllersGrid?.addEventListener("click", (e) => {
     }
     if (controller === "watering") {
         ui.show("deviceWatering");
+        return;
+    }
+    if (controller === "rules") {
+        ui.show("deviceRules");
         return;
     }
     if (controller === "ring") {
@@ -1551,6 +1560,19 @@ ui.deviceWateringGrid?.addEventListener("click", (e) => {
     scheduleCommandRefresh(1500);
 });
 
+ui.deviceRulesGrid?.addEventListener("click", (e) => {
+    const actionEl = e.target.closest('[data-action="run"]');
+    const tile = e.target.closest("[data-rule-id]");
+    if (!actionEl || !tile || !state.currentDevice) return;
+    if (tile.classList.contains("disabled")) return;
+    const id = Number(tile.dataset.ruleId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    ui.setRulesNotice(`Запускаем правило #${id}...`);
+    markButtonPending(actionEl);
+    sendCmd("rules", "run", { id });
+    scheduleCommandRefresh(1500);
+});
+
 ui.deviceRingWrap?.addEventListener("pointerdown", (e) => {
     const btn = e.target.closest('[data-action="ring-hold"]');
     if (!btn || !state.currentDevice || btn.disabled) return;
@@ -1694,6 +1716,7 @@ function selectDevice(device) {
     ui.deviceThermoGrid.innerHTML = "";
     ui.deviceSepticGrid.innerHTML = "";
     ui.deviceWateringGrid.innerHTML = "";
+    ui.deviceRulesGrid.innerHTML = "";
     ui.deviceRingWrap.innerHTML = "";
     ui.deviceAvrWrap.innerHTML = "";
     ui.deviceLeakGrid.innerHTML = "";
@@ -1709,6 +1732,7 @@ function selectDevice(device) {
     ui.setThermoNotice("");
     ui.setSepticNotice("");
     ui.setWateringNotice("");
+    ui.setRulesNotice("");
     ui.setRingNotice("");
     ui.setAvrNotice("");
     ui.setLeakNotice("");
@@ -1751,6 +1775,7 @@ async function bootstrapDeviceDetail(device) {
         ui.renderThermo(scopedDetail);
         ui.renderSeptic(scopedDetail);
         ui.renderWatering(scopedDetail);
+        ui.renderRules(scopedDetail);
         ui.renderRing(scopedDetail);
         ui.renderAvr(scopedDetail);
         ui.renderLeak(scopedDetail);
@@ -2418,6 +2443,7 @@ function handleWsMessage(msg) {
         ui.renderThermo(scopedDetail);
         ui.renderSeptic(scopedDetail);
         ui.renderWatering(scopedDetail);
+        ui.renderRules(scopedDetail);
         ui.renderRing(scopedDetail);
         ui.renderAvr(scopedDetail);
         ui.renderLeak(scopedDetail);
@@ -2457,6 +2483,7 @@ function handleWsMessage(msg) {
         ui.renderThermo(scopedDetail);
         ui.renderSeptic(scopedDetail);
         ui.renderWatering(scopedDetail);
+        ui.renderRules(scopedDetail);
         ui.renderRing(scopedDetail);
         ui.renderAvr(scopedDetail);
         ui.renderLeak(scopedDetail);

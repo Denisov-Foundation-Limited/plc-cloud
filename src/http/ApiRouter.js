@@ -255,7 +255,6 @@ export class ApiRouter {
                     res.status(403).json({ ok: false, error: "forbidden" });
                     return;
                 }
-                this.logStackSummaryShape_(deviceId, sanitized);
                 res.json({ ok: true, device: sanitized });
             },
         );
@@ -791,37 +790,4 @@ export class ApiRouter {
         );
     }
 
-    logStackSummaryShape_(deviceId, summary) {
-        const stackUnits =
-            summary?.stack_units && typeof summary.stack_units === "object"
-                ? summary.stack_units
-                : null;
-        if (!stackUnits) {
-            logger.info(
-                `stack summary debug: device_id: ${deviceId} stack_units: none`,
-            );
-            return;
-        }
-        for (const [nodeId, unit] of Object.entries(stackUnits)) {
-            const controllers =
-                unit?.controllers && typeof unit.controllers === "object"
-                    ? unit.controllers
-                    : {};
-            const scopedSummary =
-                unit?.summary && typeof unit.summary === "object"
-                    ? unit.summary
-                    : {};
-            const controllerKeys = Object.keys(controllers);
-            const summaryKeys = Object.keys(scopedSummary);
-            const tanks = controllers?.tanks;
-            const tanksShape = Array.isArray(tanks)
-                ? `array:${tanks.length}`
-                : tanks && typeof tanks === "object"
-                  ? `object:enabled=${Number(tanks.enabled_count ?? tanks.enabled ?? 0)}`
-                  : "-";
-            logger.info(
-                `stack summary debug: device_id: ${deviceId} node_id: ${nodeId} controllers: ${controllerKeys.length ? controllerKeys.join(",") : "-"} summary: ${summaryKeys.length ? summaryKeys.join(",") : "-"} tanks: ${tanksShape}`,
-            );
-        }
-    }
 }

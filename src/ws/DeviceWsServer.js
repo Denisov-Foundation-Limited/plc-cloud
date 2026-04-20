@@ -305,23 +305,6 @@ export class DeviceWsServer {
             const scopeUnit = message.unit || pendingScope?.unit;
             const scopeNodeId = message.node_id ?? pendingScope?.node_id;
             if (scopeUnit === "stack" && scopeNodeId && data && typeof data === "object") {
-                const controllers =
-                    data.controllers && typeof data.controllers === "object"
-                        ? data.controllers
-                        : {};
-                const summary =
-                    data.summary && typeof data.summary === "object"
-                        ? data.summary
-                        : null;
-                const tanks = controllers?.tanks;
-                const tanksShape = Array.isArray(tanks)
-                    ? `array:${tanks.length}`
-                    : tanks && typeof tanks === "object"
-                      ? `object:enabled=${Number(tanks.enabled_count ?? tanks.enabled ?? 0)}`
-                      : "-";
-                logger.info(
-                    `stack get debug: device_id: ${deviceId} node_id: ${Number(scopeNodeId)} type: ${message.type} controllers: ${Object.keys(controllers).length ? Object.keys(controllers).join(",") : "-"} summary: ${summary ? Object.keys(summary).join(",") || "-" : "-"} tanks: ${tanksShape}`,
-                );
             }
             if (data && typeof data === "object") {
                 try {

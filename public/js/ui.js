@@ -282,6 +282,7 @@ function summarizeControllers(controllers = {}, summary = null, options = {}) {
     const tanks = asArray(effectiveControllers.tanks);
     const septic = asArray(effectiveControllers.septic);
     const watering = asArray(effectiveControllers.watering);
+    const rules = asArray(effectiveControllers.rules);
     const leak = asArray(effectiveControllers.leak);
     const countOf = (obj, primary, alt) => {
         const raw = obj?.[primary] ?? obj?.[alt];
@@ -296,6 +297,7 @@ function summarizeControllers(controllers = {}, summary = null, options = {}) {
     const tanksSummary = summaryObj(effectiveControllers.tanks);
     const septicSummary = summaryObj(effectiveControllers.septic);
     const wateringSummary = summaryObj(effectiveControllers.watering);
+    const rulesSummary = summaryObj(effectiveControllers.rules);
     const leakSummary = summaryObj(effectiveControllers.leak);
 
     return [
@@ -370,6 +372,15 @@ function summarizeControllers(controllers = {}, summary = null, options = {}) {
                 : `${countOf(wateringSummary, "active_count", "active")}/${countOf(wateringSummary, "enabled_count", "enabled")}`,
             online: hasControllerData(watering, wateringSummary),
             visible: hasControllerData(watering, wateringSummary),
+        },
+        {
+            key: "rules",
+            title: "Правила",
+            status: rules.length > 0
+                ? `${rules.length}`
+                : `${countOf(rulesSummary, "enabled_count", "enabled")}`,
+            online: hasControllerData(rules, rulesSummary),
+            visible: hasControllerData(rules, rulesSummary),
         },
         {
             key: "security",
@@ -467,6 +478,9 @@ function controllerIconSvg(key) {
     if (k === "watering") {
         return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><path d="M34 18h28" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><circle cx="34" cy="18" r="4" fill="currentColor"/><circle cx="62" cy="18" r="4" fill="currentColor"/><circle cx="48" cy="18" r="7" fill="currentColor"/><path d="M48 25v11" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M22 42h34c9 0 17 8 17 17v2c0 4-3 7-7 7h-8V57c0-4-3-7-7-7H22z" fill="currentColor"/><path d="M58 42h8c10 0 18 8 18 18v12h-8V61c0-6-5-11-11-11h-7z" fill="currentColor"/><path d="M70 72h14v4H70z" fill="currentColor"/><path d="M66 79c0 6.6-5.4 12-12 12s-12-5.4-12-12c0-7.6 12-20 12-20s12 12.4 12 20Z" fill="currentColor" opacity=".7"/><path d="M57 72c2 3 3 6 3 9 0 4.5-2.7 8-7 8" stroke="#0b1220" stroke-width="3" stroke-linecap="round" opacity=".55"/></svg>';
     }
+    if (k === "rules") {
+        return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><rect x="22" y="14" width="52" height="68" rx="10" stroke="currentColor" stroke-width="5"/><path d="M34 32h28M34 46h28M34 60h20" stroke="currentColor" stroke-width="5" stroke-linecap="round"/><path d="M58 56l8 8 14-18" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    }
     if (k === "ring") {
         return '<svg class="ctrl-icon-svg" viewBox="0 0 96 96" fill="none" aria-hidden="true"><path d="M48 18c-12 0-22 10-22 22v11c0 7-2.8 13.7-7.8 18.7L14 74h68l-4.2-4.3C72.8 64.7 70 58 70 51V40c0-12-10-22-22-22Z" stroke="currentColor" stroke-width="5" stroke-linejoin="round"/><path d="M40 80c2 4 4.8 6 8 6s6-2 8-6" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg>';
     }
@@ -527,6 +541,7 @@ export class Ui {
         this.deviceThermoView = document.getElementById("deviceThermoView");
         this.deviceSepticView = document.getElementById("deviceSepticView");
         this.deviceWateringView = document.getElementById("deviceWateringView");
+        this.deviceRulesView = document.getElementById("deviceRulesView");
         this.deviceRingView = document.getElementById("deviceRingView");
         this.deviceAvrView = document.getElementById("deviceAvrView");
         this.deviceLeakView = document.getElementById("deviceLeakView");
@@ -605,6 +620,7 @@ export class Ui {
         this.deviceThermoGrid = document.getElementById("deviceThermoGrid");
         this.deviceSepticGrid = document.getElementById("deviceSepticGrid");
         this.deviceWateringGrid = document.getElementById("deviceWateringGrid");
+        this.deviceRulesGrid = document.getElementById("deviceRulesGrid");
         this.deviceRingWrap = document.getElementById("deviceRingWrap");
         this.deviceAvrWrap = document.getElementById("deviceAvrWrap");
         this.deviceLeakActions = document.getElementById("deviceLeakActions");
@@ -640,6 +656,7 @@ export class Ui {
         this.deviceWateringNotice = document.getElementById(
             "deviceWateringNotice",
         );
+        this.deviceRulesNotice = document.getElementById("deviceRulesNotice");
         this.deviceRingNotice = document.getElementById("deviceRingNotice");
         this.deviceAvrNotice = document.getElementById("deviceAvrNotice");
         this.deviceLeakNotice = document.getElementById("deviceLeakNotice");
@@ -687,6 +704,9 @@ export class Ui {
         );
         this.backToControllersFromWatering = document.getElementById(
             "backToControllersFromWatering",
+        );
+        this.backToControllersFromRules = document.getElementById(
+            "backToControllersFromRules",
         );
         this.backToControllersFromRing = document.getElementById(
             "backToControllersFromRing",
@@ -742,6 +762,10 @@ export class Ui {
     setWateringNotice(text = "") {
         if (this.deviceWateringNotice)
             this.deviceWateringNotice.textContent = text;
+    }
+
+    setRulesNotice(text = "") {
+        if (this.deviceRulesNotice) this.deviceRulesNotice.textContent = text;
     }
 
     setRingNotice(text = "") {
@@ -883,6 +907,7 @@ export class Ui {
             this.deviceThermoGrid,
             this.deviceSepticGrid,
             this.deviceWateringGrid,
+            this.deviceRulesGrid,
             this.deviceRingWrap,
             this.deviceAvrWrap,
             this.deviceLeakGrid,
@@ -931,6 +956,7 @@ export class Ui {
             deviceThermo: this.deviceThermoView,
             deviceSeptic: this.deviceSepticView,
             deviceWatering: this.deviceWateringView,
+            deviceRules: this.deviceRulesView,
             deviceRing: this.deviceRingView,
             deviceAvr: this.deviceAvrView,
             deviceLeak: this.deviceLeakView,
@@ -1019,6 +1045,7 @@ export class Ui {
             "hidden",
             view !== "deviceWatering",
         );
+        this.deviceRulesView.classList.toggle("hidden", view !== "deviceRules");
         this.deviceRingView.classList.toggle("hidden", view !== "deviceRing");
         this.deviceAvrView.classList.toggle("hidden", view !== "deviceAvr");
         this.deviceLeakView.classList.toggle("hidden", view !== "deviceLeak");
@@ -1050,6 +1077,7 @@ export class Ui {
             view === "deviceThermo" ||
             view === "deviceSeptic" ||
             view === "deviceWatering" ||
+            view === "deviceRules" ||
             view === "deviceRing" ||
             view === "deviceAvr" ||
             view === "deviceLeak" ||
@@ -1067,6 +1095,7 @@ export class Ui {
                 view === "deviceThermo" ||
                 view === "deviceSeptic" ||
                 view === "deviceWatering" ||
+                view === "deviceRules" ||
                 view === "deviceRing" ||
                 view === "deviceAvr" ||
                 view === "deviceLeak",
@@ -2209,8 +2238,47 @@ export class Ui {
             </div>
             <div class="socket-actions action-row">
               <button class="ghost btn-sm ${powerOn ? "btn-off" : "btn-on"}" data-action="status-toggle" ${enabled && powerWritable ? "" : "disabled"}>${powerOn ? "⚪ Питание" : "🟢 Питание"}</button>
-              <button class="ghost btn-sm ${(active || force) ? "btn-off" : "btn-on"}" data-action="force-toggle" ${enabled && forceWritable ? "" : "disabled"}>${force ? "🟢 Полить" : "💧 Полить"}</button>
+              <button class="ghost btn-sm ${force ? "btn-off" : "btn-on"}" data-action="force-toggle" ${enabled && forceWritable ? "" : "disabled"}>${force ? "🚰 Не поливать" : "🚰 Полить"}</button>
             </div>
+          </div>
+        </article>
+      `;
+            })
+            .join("");
+    }
+
+    renderRules(detail) {
+        if (!this.deviceRulesGrid) return;
+        const list = asArray(detail?.controllers?.rules).filter(
+            (item) => Number(item?.id) > 0,
+        );
+        if (!list.length) {
+            this.deviceRulesGrid.innerHTML = this.renderEmptyState(
+                stackControllerPending(detail, "rules")
+                    ? "Идёт загрузка правил со слейва"
+                    : "Нет доступных правил",
+                "Обновить",
+            );
+            return;
+        }
+        this.deviceRulesGrid.innerHTML = list
+            .map((item) => {
+                const id = Number(item?.id);
+                const access = controllerAccess(detail, "rules", id, "run");
+                const writable = access.write;
+                const name = String(item?.name || "").trim() || `Правило ${id}`;
+                const description = String(item?.description || "").trim();
+                return `
+        <article class="tile ${writable ? "" : "disabled"}" data-rule-id="${id}">
+          <div class="tile-head">
+            <div>
+              <div class="tile-title">📜 ${esc(name)}</div>
+              <div class="tile-sub">${description ? esc(description) : `ID: ${id}`}</div>
+            </div>
+            ${statusBadge(writable ? "Готово" : "Нет доступа", writable ? "ok" : "muted")}
+          </div>
+          <div class="socket-actions action-row">
+            <button class="ghost btn-sm ${writable ? "btn-on" : ""}" type="button" data-action="run" ${writable ? "" : "disabled"}>Выполнить</button>
           </div>
         </article>
       `;

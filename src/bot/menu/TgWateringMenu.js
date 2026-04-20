@@ -397,6 +397,39 @@ export class TgWateringMenu {
         );
     }
 
+    async refreshItem(
+        ctx,
+        {
+            deviceId,
+            nodeId = null,
+            itemId,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        },
+    ) {
+        await ctx.answerCallbackQuery({ text: "Обновляю..." });
+        this.deviceWs?.sendGet(
+            Number(deviceId),
+            ["controllers"],
+            nodeId ? "stack" : "local",
+            nodeId || undefined,
+        );
+        await this.delay(350);
+        await this.openItem(ctx, {
+            deviceId,
+            nodeId,
+            itemId,
+            user,
+            getScopedDetail,
+            replyMenu,
+            mainMenuCallbackData,
+            controllersCallbackData,
+        });
+    }
+
     async openTankEditor(
         ctx,
         {
@@ -633,6 +666,28 @@ export class TgWateringMenu {
             return;
         }
         const nextState = item?.force ? "off" : "on";
+        if (nextState === "on") {
+            const blocked = this.forceBlockedReason(detail, item);
+            if (blocked) {
+                await ctx.answerCallbackQuery({
+                    text: blocked,
+                    show_alert: true,
+                });
+                const lines = itemDetailLines(item);
+                lines.splice(1, 0, `⚠️ ${escapeHtml(blocked)}`, "");
+                await replyMenu(
+                    ctx,
+                    lines.join("\n"),
+                    this.buildItemKeyboard(
+                        detail,
+                        item,
+                        controllersCallbackData,
+                        mainMenuCallbackData,
+                    ),
+                );
+                return;
+            }
+        }
         const ok = await this.sendCommand({
             deviceId,
             nodeId,
@@ -647,9 +702,69 @@ export class TgWateringMenu {
             });
             return;
         }
+        await this.delay(350);
+        const refreshedDetail = await getScopedDetail(deviceId, nodeId, user);
+        const refreshedItem = this.findItem(refreshedDetail, itemId);
+        if (refreshedDetail && refreshedItem) {
+            if (nextState === "on" && !refreshedItem.force) {
+                const blocked =
+                    this.forceBlockedReason(refreshedDetail, refreshedItem) ||
+                    "Полив не запущен";
+                await ctx.answerCallbackQuery({
+                    text: blocked,
+                    show_alert: true,
+                });
+                const lines = itemDetailLines(refreshedItem);
+                lines.splice(1, 0, `⚠️ ${escapeHtml(blocked)}`, "");
+                await replyMenu(
+                    ctx,
+                    lines.join("\n"),
+                    this.buildItemKeyboard(
+                        refreshedDetail,
+                        refreshedItem,
+                        controllersCallbackData,
+                        mainMenuCallbackData,
+                    ),
+                );
+                return;
+            }
+            if (nextState === "off" && refreshedItem.force) {
+                const blocked = "Ручной полив не остановлен";
+                await ctx.answerCallbackQuery({
+                    text: blocked,
+                    show_alert: true,
+                });
+                const lines = itemDetailLines(refreshedItem);
+                lines.splice(1, 0, `⚠️ ${escapeHtml(blocked)}`, "");
+                await replyMenu(
+                    ctx,
+                    lines.join("\n"),
+                    this.buildItemKeyboard(
+                        refreshedDetail,
+                        refreshedItem,
+                        controllersCallbackData,
+                        mainMenuCallbackData,
+                    ),
+                );
+                return;
+            }
+        }
         await ctx.answerCallbackQuery({
             text: nextState === "on" ? "Ручной полив запускаю..." : "Ручной полив останавливаю...",
         });
+        if (refreshedDetail && refreshedItem) {
+            await replyMenu(
+                ctx,
+                itemDetailLines(refreshedItem).join("\n"),
+                this.buildItemKeyboard(
+                    refreshedDetail,
+                    refreshedItem,
+                    controllersCallbackData,
+                    mainMenuCallbackData,
+                ),
+            );
+            return;
+        }
         await this.replyPatchedItem(
             ctx,
             detail,
@@ -1109,6 +1224,23 @@ export class TgWateringMenu {
         return list.find((item) => Number(item?.id) === Number(tankId)) || null;
     }
 
+    forceBlockedReason(detail, item) {
+        const tankId = Number(item?.tank || 0);
+        if (!Number.isFinite(tankId) || tankId <= 0) return "";
+        const tank = this.findTank(detail, tankId);
+        if (!tank) return "";
+        if (tank?.levels_ok === false) {
+            return `Полив не запущен: бак ${tankLabel(item)} в аварии`;
+        }
+        const hasLevel = Boolean(
+            tank?.level_low || tank?.level_mid || tank?.level_full,
+        );
+        if (!hasLevel) {
+            return `Полив не запущен: бак ${tankLabel(item)} пустой`;
+        }
+        return "";
+    }
+
     patchItem(detail, itemId, updater) {
         return {
             ...detail,
@@ -1314,10 +1446,15 @@ export class TgWateringMenu {
             .text("⏰ Слот 2", this.slotViewCallbackData(deviceId, nodeId, itemId, 2))
             .text("⏰ Слот 3", this.slotViewCallbackData(deviceId, nodeId, itemId, 3))
             .row();
-        keyboard.text(
-            "◀️ Назад",
-            this.controllerCallbackData(deviceId, nodeId),
-        );
+        keyboard
+            .text(
+                "🔄 Обновить",
+                this.refreshItemCallbackData(deviceId, nodeId, itemId),
+            )
+            .text(
+                "◀️ Назад",
+                this.controllerCallbackData(deviceId, nodeId),
+            );
         return keyboard;
     }
 
@@ -1473,6 +1610,10 @@ export class TgWateringMenu {
 
     forceCallbackData(deviceId, nodeId = 0, itemId) {
         return `menu:watering:force:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}`;
+    }
+
+    refreshItemCallbackData(deviceId, nodeId = 0, itemId) {
+        return `menu:watering:refresh:${Number(deviceId)}:${Number(nodeId || 0)}:${Number(itemId)}`;
     }
 
     weekdayCallbackData(deviceId, nodeId = 0, itemId, bit) {
