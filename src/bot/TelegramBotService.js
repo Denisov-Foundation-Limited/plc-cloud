@@ -868,10 +868,10 @@ export class TelegramBotService {
             const user = await this.requireLinkedUser(ctx);
             if (!user) return;
             this.logTelegramAction(ctx, user, "callback_help");
-            await this.replyMenu(
+            await this.replyHomeMenu(
                 ctx,
                 this.helpText(user),
-                this.buildMainMenuKeyboard(),
+                user,
             );
         });
 
@@ -920,10 +920,10 @@ export class TelegramBotService {
                     `index: ${objectIndex} object: ${objectName || "-"}`,
                 );
                 if (!objectName) {
-                    await this.replyMenu(
+                    await this.replyHomeMenu(
                         ctx,
                         "Объект не найден.",
-                        this.buildMainMenuKeyboard(),
+                        user,
                     );
                     return;
                 }
@@ -2606,10 +2606,10 @@ export class TelegramBotService {
             ? sanitizeSummaryForSession(summary, user || {})
             : null;
         if (summary && !visibleSummary) {
-            await this.replyMenu(
+            await this.replyHomeMenu(
                 ctx,
                 `Нет доступа к устройству #${deviceId}.`,
-                this.buildMainMenuKeyboard(),
+                user,
             );
             return;
         }
@@ -2808,6 +2808,18 @@ export class TelegramBotService {
         return new InlineKeyboard()
             .text("🏘 К началу", CALLBACK_MAIN)
             .text("📟 Все устройства", CALLBACK_DEVICES);
+    }
+
+    async replyHomeMenu(ctx, leadText = "", user = null) {
+        if (user) {
+            await this.sendObjectsList(ctx, leadText, user);
+            return;
+        }
+        await this.replyMenu(
+            ctx,
+            leadText || "Выбери объект.",
+            this.buildMainMenuKeyboard(),
+        );
     }
 
     buildObjectsReplyKeyboard(objects) {
@@ -4781,7 +4793,7 @@ export class TelegramBotService {
                 `telegram controllers unavailable for device ${deviceId}${nodeId ? `:${nodeId}` : ""}: ${notes.join(" | ")}`,
             );
             this.setReplyMenuState(ctx, null);
-            await this.replyMenu(
+            await this.replyHomeMenu(
                 ctx,
                 [
                     `Устройство #${deviceId} недоступно.`,
@@ -4789,7 +4801,7 @@ export class TelegramBotService {
                     "<b>Диагностика</b>",
                     ...notes.map((line) => `• ${escapeHtml(line)}`),
                 ].join("\n"),
-                this.buildMainMenuKeyboard(),
+                user,
             );
             return;
         }
